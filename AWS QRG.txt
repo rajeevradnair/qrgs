@@ -33,11 +33,87 @@
 										CanonicalHeaders + 		// 
 										SignedHeaders + 
 										HexEncode(Hash(RequestPayload))
-			step 2: Use the canonical request and additional metadata to create a paylod that will be signed
-			step 3: Derive a signing key from your AWS secret access key. Then use the signing key, and the payload string from step-2, to create a signature.
-			step 4: Add the resulting signature to the HTTP request in a header or as a query string parameter.
+			step 2: Use the canonical request and additional metadata to create a request string that will be signed
+			step 3: Derive a signing key from your AWS secret access key. 
+			step 4: Then use the signing key, and the payload string from step-2, to create a signature.
+			step 5: Add the resulting signature to the HTTP request in a header or as a query string parameter.
 
 
+	===================================================
+	AWS Config:
+	===================================================
+		- Key Use-cases:
+			- View current snapshot of configuration of resources in your AWS account 
+			- Track historical how resource configurations were modified over a time-scale and by whom 
+			- Relationship & impact analysis by tracking relationship between resources in your AWS accounts (like 3 EC2s using a specific security group)
+			- Provide visibility into resource consumption by receiving notifications whenever a resource is created, modified, or deleted
+			- View AWS resource compliance history (compliance as it pertains to Config Rules for desired settings)
+			- For On-premise SSM managed instances, AWS config can record applications, AWS components (CLI, SDK), Instance Info (OS, Domain), Network config (IP, Mask), Windows Updates
+			
+		- Resources includes all of the major AWS resources like compute, storage, CI/CD, security etc. including IAM user, IAM groups
+										And
+										AWS SSM managed-instances
+		
+		- How does Config work?
+				~ AWS Config has a functionality called "CONFIG RECORDER" that can be enabled at an AWS account level
+				~ When you turn on AWS Config Recorder, it first discovers the supported AWS resources that exist in your account 
+				~ And, generates a "Configuration Item" for each discovered resource
+				~ And, generates a "Configuration Item" for each resource related to the discovered resource
+				~ When a resource is modified, the recorder generates a new "Configuration Item" for that resource and new "Configuration Item"(s) for each of the related resource
+				~ the STREAM of "Configuration Items" is delivered to DELIVERY CHANNEL. The channels are an S3 bucket and an SNS topic
+				~ Therefore, 
+					a resource = 
+						Config Item (t) + Config Item (t-1) + Config Item (t-2) + Config Item (t-3) ..... + Config Item (when recorder was started)
+					related res. (1) = 
+						Config Item (t) + Config Item (t-1) + Config Item (t-2) + Config Item (t-3) ..... + Config Item (when recorder was started)
+					related res. (1) = 
+						Config Item (t) + Config Item (t-1) + Config Item (t-2) + Config Item (t-3) ..... + Config Item (when recorder was started)
+				~ EXAMPLE: 
+					AWS: 
+						removing an egress rule from a VPC security group causes AWS Config to invoke a Describe API call on the security group. AWS Config then invokes a Describe API call on all of the instances associated with the security group. The updated configurations of the security group (the resource) and of each instance (the related resources) are recorded as configuration items.
+					On-premises: 
+						You can also use AWS Config rules to monitor software configuration changes and be notified whether the changes are compliant or noncompliant against your rules. For example, if you create a rule that checks whether your managed instances have a specified application, and an instance doesn't have that application installed, AWS Config flags that instance as noncompliant against your rule.
+		
+		- What is a "Configuration Item"?
+				  Metadata = Version Id + Time of CI capture + State ID indicating ordering of the CI + Status indicating whether CI was captured corerectly
+				+ Attributes = Resource ID + Resource Type + ARN + AZ + Time the resource was created + Key-Value tags
+				+ Relationships = Description such as Amazon EBS volume vol-1234567 is attached to an Amazon EC2 instance i-a1b2c3d4
+				+ Current Configuration = Information returned through a call to the Describe or List API of the resource	
+		
+		- What is AWS Config Rule?
+				~ When a rule is defined, AWS Config will evaluate your resource for DESIRED SETTINGS (remember it is not a state, but desired settings)
+				~ Rule is triggered periodically or when a configuration changes
+				~ Rule is associated to an evaluation Lambda function
+				~ The trigger calls the Lambda function that compares the current and desired settings
+				~ The lambda function returns compliance status of the resource for that rule
+		
+		- Multi-Account Multi-Region Configuration Items Aggregation
+				- An aggregator is an object within the aggregator AWS account
+				- Multiple Source AWS account or a Source organization sends its stream of Config Items to the aggregator object within the aggregator account
+				- As a source AWS account owner, authorization refers to the permissions you grant to an aggregator account and region to collect your AWS Config configuration and compliance data. Authorization is not required if you are aggregating source accounts that are part of AWS Organizations.
+				- Two step process:
+					** create an aggregator object in the aggregator AWS account
+					** grant authorization to the aggregator account on the specific AWS accounts and their source regions from which data should be aggregated
+						
+		- CW Events:
+				event type (detaile type) = API Call via Cloudtrail, Config Item Change, Rule Compliance Change, Rules Re-evaluation Status, Config Snapshot Delivery Status, Config History Delivery Status
+						- Choose Config Configuration Item Change to get notifications when a resource in your account changes.
+						- Choose Config Rules Compliance Change to get notifications when a compliance check to your rules fails.
+						- Choose Config Rules Re-evaluation Status to get re-evaluation status notifications.
+						- Choose Config Configuration Snapshot Delivery Status to get configuration snapshot delivery status notifications.
+						- Choose Config Configuration History Delivery Status to get configuration history delivery status notifications.
+		
+		- Which resources are recorded?
+				- By default, AWS Config records changes for all supported types in a region
+				- AWS Config can also record global resources - IAM users, groups, roles, and customer managed policies
+				- AWS Config can also record software inventory for managed instances
+				- If you don't want AWS Config to record the changes for all supported resources, you can customize it to record changes for only specific types
+				- If a resource is not recorded, AWS Config captures only the creation and deletion of that resource, and no other details, at no cost to you
+				- If a recorded resource is related to a nonrecorded resource, that relationship is provided in the details page of the recorded resource
+		
+		- What if recorder is turned OFF?
+				- After AWS Config stops recording a resource, it retains the configuration information that was previously captured, and you can continue to access this information
+		
 	===================================================
 	Systems Manager (SSM):
 	===================================================
@@ -45,29 +121,49 @@
 				~ Operations Management		OpsCenter, CloudWatch Dashboard, Explorer, Trusted Advisor, Personal Health Dashboard, Incident Mgr.
 				~ Application Management	Resource Groups, Param Store, AppConfig
 				~ Actions & Change			Automation, Maintenance Windows
-				~ Shared Resources			Documents (CAPSPC - Command, Automation, Package, Session, Policy, Change Calendar)
-				~ Instances & Nodes			Managed Instances, Inventory, Run, State, Activations, Patch, Session, Distributor, Config (MIR SAP SDC)
+				~ Shared Resources			Documents (CAPSPC - doc-types: Command, Automation, Policy, Session, Package, Change Calendar, CloudFormation)
+				~ Instances & Nodes			Inventory, Activations, Managed Instances, Run, State Mgr, Patch Mgr, Session Mgr, Distributor Mgr, Config Mgr (MAI RSP SDC)
 		
 		- Managed Instance:
 					- Machine configured for use with Systems Manager is managed instance
 					- Machine Could be EC2, On-premise servers, VMs in other cloud environments
 					- OS = Windows, macOS, Linux distributions, Raspbian
-
+		
+		- IAM users / groups managing Systems Manager:
+			Example permissions that can be assigned to IAM users or user-groups are as follows: 
+				AmazonSSMFullAccess 
+				AmazonSSMReadOnlyAccess 
+				AWSHealthFullAccess
+				AWSConfigUserAccess
+				CloudWatchReadOnlyAccess
+		
+		- EC2 Instance Profile for SSM:
+			By default, SSM has no access to EC2 instances and other AWS resources
+			Permission policies (resource based policies) to be assigned to EC2 instances via Instance Profiles for SSM management are as follows:
+				AmazonSSMManagedInstanceCore (required) : 	allows an instance to use Systems Manager service core functionality
+				AmazonSSMDirectoryServiceAccess 		: 	if you plan to join the instance to an AD managed by AWS DS
+				CloudWatchAgentServerPolicy 			: 	If you plan to use EventBridge or CloudWatch Logs to manage or monitor your instance
+		
+		- Service-linked role for SSM:
+			The Systems Manager service-linked role can be used for the following:
+				~ The Systems Manager Inventory capability uses the service-linked role to collect inventory metadata from tags and resource groups
+				~ The Maintenance Windows capability can use the service-linked role in some situations 
+		
 		- SSM Agent 
 					- Software installed on managed instances
 					- Agent <--> SSM Service communication:
 							- The agent requests instructions from the SSM service, runs them, sends status and exec info to SSM service via Amazon Message Delivery Service 
-							- If you monitor traffic, you will see your EC2s & on-premises servers or VMs in your hybrid environment, communicating with ec2messages.* endpoints
+							- If you monitor traffic, you will see your EC2s & on-premises servers or VMs in your hybrid environment communicating with ec2messages.* endpoints
 					- To update/upgrade the SSM agent versions, options are as follows:
 							- Managed instances checks for updates and downloads new version 
-							- Run State Manager associations to automatically check (periodially) download and install SSM agents
-							- Create a SSM maintenance window and execute RUN scripts to contain disruption 
+							* Run State Manager associations to automatically check (periodially) download and install SSM agents
+							* Create a SSM maintenance window and execute RUN scripts to contain disruption 
 					- SSM agent runs locally under the user "ssm-user"
 							- ssm-user is created the first time a session is instantiated
 							- ssm-user is placed in Linux sudoers file or Windows Administrators group 
 					- Credentials required for the SSM agent agent to connect to SSM Service:
 							- if agent is installed on EC2, agent gets permissions from instance profile
-							- if agent is installed on on-prem servers or other cloud vms, agent uses credentials stored in /root/.aws/credentials
+							- if agent is installed on on-prem servers or other cloud vms, agent uses IAM user credentials stored in /root/.aws/credentials and a service role is assigned to that IAM user
 		
 		- Incident Manager:
 					- Manage IT incidents 
@@ -77,23 +173,62 @@
 							~ Response plans 
 							~ Active collaboration 
 							~ Incident tracking
-					- 
 		
 		- State Manager:
-					- Desired state management service 
-					- An association defines:
-							~ the SSM documents to run and parameters for the SSM document
-							~ the schedule for when the config is applied once or (re-)applied. The association also specifies actions to take when applying thechef configuration
-							~ target (=EC2, resource groups)
+					- Desired state management service for managed instances (EC2 and on-premise)
+					- An association defines the "desired state" to be maintained on the instances
+					- And the state can usually be achieved by one of the existing SSM documents
+					- An association is defined as a combination of 
+							~ the SSM document to apply along with parameters to pass
+							~ the schedule for when the state is checked and the desired state is applied once or (re-)applied multiple times 
+							~ target (=EC2, resource groups, auto scaling groups)
+					- Association can control rate of concurrency (i.e. only certain number of instances can process an association simultaneously) and error thresholds (how many association executions are allowed to fail before Systems Manager stops the execution and waits for the next schedule) 
 					- Example:
-						1. Run Managed Object Format (MOF) files to enforce a desired state on Windows Server managed instances using the AWS-ApplyDSCMofs SSM document
-						2. Run Ansible playbooks by using the AWS-ApplyAnsiblePlaybooks SSM document
-						3. Run Chef recipes by using the AWS-ApplyChefRecipes SSM document
-						4. Automatically update SSM Agent 
-						5. Automatically update PV drivers on EC2 instances for Windows Server
+							1. Run Managed Object Format (MOF) files to enforce a desired state on Windows Server managed instances using the AWS-ApplyDSCMofs SSM document
+							2. Run Ansible playbooks by using the AWS-ApplyAnsiblePlaybooks SSM document
+							3. Run Chef recipes by using the AWS-ApplyChefRecipes SSM document
+							4. Automatically update SSM Agent 
+							5. Automatically update PV drivers on EC2 instances for Windows Server
+							6. AWS-InstallApplications
+							7. AWS-ConfigureAWSPackages
+		
+		- State Manager v/s Maintenance Windows
+				- State Manager is the recommended capability if you want to maintain all managed instances in your account in a consistent state
+				- Maintenance window is used when you want one or more tasks or documents to be run or PATCHING to happen at particular times
+				- https://docs.aws.amazon.com/systems-manager/latest/userguide/state-manager-vs-maintenance-windows.html
+		
+		- Patch Manager
+					- Patches both OS and Applications on an EC2 instance
+					- Patches include Security fix (default) and other types
+					- Install patches regularly within a maintenance window
+					- Scan instances and report compliance i.e. patch status
+					- A patch baseline defines which patches are approved for installation on your instances
+					- Predefined patch baselines (non-customizable) 
+							AWS-DefaultPatchBaseline (Windows)	
+							AWS-WindowsPredefinedPatchBaseline-OS (Windows)	
+							AWS-WindowsPredefinedPatchBaseline-OS-Applications (Windows)	
+							AWS-AmazonLinuxDefaultPatchBaseline
+							AWS-AmazonLinux2DefaultPatchBaseline	
+							AWS-CentOSDefaultPatchBaseline	
+							AWS-DebianDefaultPatchBaseline	
+							AWS-MacOSDefaultPatchBaseline	
+							AWS-OracleLinuxDefaultPatchBaseline	
+							AWS-RedHatDefaultPatchBaseline
+							AWS-SuseDefaultPatchBaseline	
+							AWS-UbuntuDefaultPatchBaseline
+
+					- How is patch selected?
+						- Patch to be applied is determined by the OS of the EC2 instance
+						- A Patch repository stores Patch Baseline for each Operating System (Amazon Linux, CentOS, Debian, RHEL, SLES, Ubuntu, Windows)
+						- The SSM agent downloads the patches from the corresponding repos and uses the package manager to install the patch
+					- How does it work?
+						- Relies on the existence of an SSM agent on the EC2 instance
+						- SSM agent on Linux   requires network connectivity to patch repositories
+						- SSM agent on Windows requires network connectivity to WSUS or Windows Update Catalog
+					
 		
 		- AWS Personal Health Dashboard
-					- Displays recent, upcoming events organized by category AND full event log for past 90days
+					- Displays recent, upcoming events organized by category AND full event log for past 90days for account
 					- See section on Health integration with CW Events
 		
 		- AWS Trusted Advisor: #### CoPe SeSe Ft
@@ -118,10 +253,36 @@
 						Green 	– Trusted Advisor doesn't detect an issue for the check.
 						Yellow 	– Trusted Advisor detects a possible issue for the check.
 						Red 	– Trusted Advisor recommends an action for the check.
-					- Trusted Advisor uses IAM service-linked role called "AWSServiceRoleForTrustedAdvisorReporting" to execute against organization & its smembers  
+					- Trusted Advisor uses IAM service-linked role called "AWSServiceRoleForTrustedAdvisorReporting" to execute against organization & its members  
 		
-		
-		
+		- Automation:
+			- Service operates by using the context of the user who invoked the execution
+			- Primary component:
+				~ Automation Runbook 
+					- is a SSM document of type "Automation"
+					- defines the steps that SSM performs on your managed instances and AWS resources
+					- each step is known as a 'Runbook action'
+			- Other Runbook components:
+				- Action: has the input, behavior and output of the step
+				- Quota: Each AWS account can run 100 automation runbooks concurrently
+				- Queue Quota: Request for runbook runs beyond the concurrent quota is queued. Upto 1000 requests in the queue 
+			- Sample runbooks:
+					~ AWS-StopEC2InstanceWithApproval: runbook to request one or more IAM users to approve instance stop action
+					~ AWS-StopEC2Instance: runbook to stop instances on a schedule via EventBridge/CW-Events or Maintenance Tasks
+					~ AWS-UpdateCloudFormationStackWithApproval: runbook to update stack created by CloudFormation with approval from 1 or more IAM users
+					~ AWS-RestartEC2InstanceWithApproval: runbook to target an AWS resource group that includes multiple instances with velocity control 
+					~ AWS-UpdateLinuxAmi: runbook to create golden AMIs from a source Linux AMI 
+					~ AWS-UpdateWindowsAmi: runbook to create golden AMIs from source Windows AMI
+					~ AWSSupport-TroubleshootSSH: runbook installs EC2Rescue tool and uses it to check and attempt to fix remote SSH connection issue
+					~ AWSSupport-ExecuteEC2Rescue: runbook to run the EC2Rescue tool to recover impaired instances
+	
+	
+	===================================================
+	EC2Rescue
+	===================================================
+		- gathering syslog and package manager logs, collecting resource utilization data, and diagnosing/remediating known problematic kernel parameters and common OpenSSH issues.
+	
+	
 	===================================================
 	12factor: (CoDeCo BaBu ProPor ConDi LoDev Ad)
 	===================================================
@@ -157,26 +318,188 @@
 	===================================================
 	ElasticbeanStalk deployment policy
 	===================================================
-		- Key objects: App, App Version, Environment, Env Tier (Web or Worker), Saved Config, Platform
-		- All at once
-		- Rolling
-		- Rolling with additional batches
-		- Immutable
-		- Traffic splitting
+		- Key objects: App (high level container), App Version, Environment, Env Tier (Web or Worker), Saved Configurations, Platform
+		- 5 deployment strategies
+			- All at once
+			- Rolling
+			- Rolling with additional batches
+			- Immutable
+			- Traffic splitting
+						
 	===================================================
-	CodeBuild and CodeDeploy	
+	CodeBuild
 	===================================================
-		- buildspec.yaml, appspec.yaml
+		In addition to CW:
+			~ codecommit can natively send notifications to sns for branch & tags-CRUD, comments-commits & on-pull-requests, pull requests-source upated/created/status changed/merged
+			~ codecommit can natively send trigger-info to sns, lambda for all-repo-events, create/delete of branch/tag, push-existing-branch
+		- Build status tracking:
+				~ SUBMITTED, QUEUED, PROVISIONING, DOWNLOAD_SOURCE, INSTALL, PRE_BUILD, BUILD, POST_BUILD, UPLOAD_ARTIFACTS, FINALIZING, COMPLETED 
+		- buildspec.yml
+						version: 0.2
+						run-as: Linux-user-name
+						env:
+							  shell: shell-tag
+							  variables:
+								key: "value"
+								key: "value"
+							  parameter-store:
+								key: "value"
+								key: "value"
+							  exported-variables:
+								- variable
+								- variable
+							  secrets-manager:
+								key: secret-id:json-key:version-stage:version-id
+							  git-credential-helper: no | yes
+						proxy:
+							  upload-artifacts: no | yes
+							  logs: no | yes
+						batch:
+							  fast-fail: false | true
+							  # build-list:
+							  # build-matrix:
+							  # build-graph:
+						phases:
+							  install:
+								run-as: Linux-user-name
+								on-failure: ABORT | CONTINUE
+								runtime-versions:
+								  runtime: version
+								  runtime: version
+								commands:
+								  - command
+								  - command
+								finally:
+								  - command
+								  - command
+							  pre_build:
+								run-as: Linux-user-name
+								on-failure: ABORT | CONTINUE
+								commands:
+								  - command
+								  - command
+								finally:
+								  - command
+								  - command
+							  build:
+								run-as: Linux-user-name
+								on-failure: ABORT | CONTINUE
+								commands:
+								  - command
+								  - command
+								finally:
+								  - command
+								  - command
+							  post_build:
+								run-as: Linux-user-name
+								on-failure: ABORT | CONTINUE
+								commands:
+								  - command
+								  - command
+								finally:
+								  - command
+								  - command
+						reports:
+							  report-group-name-or-arn:
+								files:
+								  - location
+								  - location
+								base-directory: location
+								discard-paths: no | yes
+								file-format: report-format
+						artifacts:
+							  files:
+								- location
+								- location
+							  name: artifact-name
+							  discard-paths: no | yes
+							  base-directory: location
+							  exclude-paths: excluded paths
+							  enable-symlinks: no | yes
+							  s3-prefix: prefix
+							  secondary-artifacts:
+								artifactIdentifier:
+								  files:
+									- location
+									- location
+								  name: secondary-artifact-name
+								  discard-paths: no | yes
+								  base-directory: location
+								artifactIdentifier:
+								  files:
+									- location
+									- location
+								  discard-paths: no | yes
+								  base-directory: location
+						cache:
+							  paths:
+								- path
+								- path
+
+	===================================================
+	CodeDeploy	
+	===================================================
+		- Similar to CodeBuild, in addition to CW:
+			~ CodeDeploy can natively trigger notifications to SNS Topics for all events related to a Deployment or a Deployment Group
+		- CodeDeploy does not provision resources AND therefore, does not support Blue/Green deployment on On-premise environment
+		- CodeDeploy agent continuously polls CodeDeploy service for deployment triggers and polls S3 for actual application code
+		- CodeDeploy agent install: update, get ruby, get binary from aws-mgd s3, install, sudo service codedeploy-agent status
 		- Application is the top-level container in CodeDeploy
-			- Compute platform = EC2, ECS, Lambda
-			- Deployment Group
-			- Deployment
+			- Deployment is the actual deployment of the application (or version) to the Deployment Group
+			- Compute platform = EC2/On-premise, ECS, Lambda
+			- Deployment Group is essentially your environment. 
+					~For EC2/ON-premise compute platform: Use tags to identify group members or could point to ASG or On-premise instances
 			- Deployment type (how deployment should happen) and Deployment configurations (how traffic is to be shifted)
 					- In-place deployment type
+						- EC2/On-premise: All-at once/Half-at-a-time/One-at-a-time/Custom
+						- ECS: All-at once/Half-at-a-time/One-at-a-time/Custom
+						
 					- Blue/Green deployment type
-						- Lambda: Canary configuration: traffic is shifted in  two-step process (10P-5M, 10P-10M, 10P-15M, 10P-30M)
-						- Lambda: Linear: traffic is shifted in equal increments after a set number of minutes (10P-1M, 10P-2M, 10P-3M, 10P-10M) 
-						- ECS: All-at once/Half-at-a-time/Custom
+						- EC2: Requires ASG, ALB with two target groups
+						- ECS: Requires ASG, ALB with two target groups
+		- Environment variables:
+				~ APPLICATION_NAME
+				~ DEPLOYMENT_ID
+				~ DEPLOYMENT_GROUP_NAME
+				~ DEPLOYMENT_GROUP_ID
+				~ LIFECYCLE_EVENT
+		~ Rollback Options:
+				~ Manual: manually deploy the previous version
+				~ Automatic: rollback to prior version when deployment fails on one or more instances, OR if deployment succeeds but certain alarms are breached
+		~ Rollback behavior with existing content:
+				##### When automatic rollback is initiated, or when you manually initiate a redeployment or manual rollback, CodeDeploy first tries to remove from each participating instance all files that were last successfully installed. 
+				~ CodeDeploy does this by checking the cleanup file:
+							~ /opt/codedeploy-agent/deployment-root/deployment-instructions/deployment-group-ID-cleanup  
+							~ C:\ProgramData\Amazon\CodeDeploy\deployment-instructions\deployment-group-ID-cleanup  (for Windows Server instances)
+				~ If it exists, CodeDeploy uses the cleanup file to remove from the instance all listed files before starting the new deployment
+				~ Now if files that weren’t part of a previous deployment appear in target deployment locations, you can choose what CodeDeploy does with them during the next deployment
+						~ Fail the deployment — An error is reported and the deployment status is changed to Failed.
+						~ Overwrite the content — The version of the file from the application revision replaces the version already on the instance.
+						~ Retain the content — The file in the target location is kept and the version in the application revision is not copied to the instance.
+	
+		~ CodeDeploy on On-Premise Instances:
+				~ To register an On-premise instance, 
+					1. create an IAM user CodeDeployUser-OnPrem with permissions on S3 bucket to pull code
+					2. use "register-on-premises-instance" command with an IAM User credential 
+						$ aws deploy register --instance-name AssetTag12010298EX --iam-user-arn arn:aws:iam::444455556666:user/CodeDeployUser-OnPrem --tags Key=Name,Value=CodeDeployDemo-OnPrem --region us-west-2
+					3. create following file to store credentials:
+						Linux: /etc/codedeploy-agent/conf/codedeploy.onpremises.yml
+						Windows: c:\ProgramData\Amazon\CodeDeploy\codedeploy.onpremises.yml
+				~ To register multiple On-premise instances,use "register-on-premises-instance" command to register  and obtain IAM Role STS tokens periodically
+				~ Once the instances are registered, create Deployment Group using the registered instances
+				~ Thereafter, create and trigger Deployment 
+						
+		~ CodeDeploy on Lambda:
+				- Uses Aliases to two versions (similar to the ALB having two target groups)
+				- Lambda Traffic Shift 
+					- All-at-once: traffic is shifted all at once to the new version the alias is pointing to
+					- Canary configuration: traffic is shifted in  two-step process (10P-5M, 10P-10M, 10P-15M, 10P-30M)
+					- Linear: traffic is shifted in equal increments after a set number of minutes (10P-1M, 10P-2M, 10P-3M, 10P-10M) 
+				~ Deploy hooks:
+					~ BeforeAllowTraffic: call another Lambda function to validate the new version before traffic is diverted
+					~ AllowTraffic 		: not-callable
+					~ AfterAllowTraffic	: call another Lambda function after the traffic starts flowing in (like monitoring etc)
+				
 	===================================================
 	CodeDeploy Monitoring:
 	===================================================
@@ -228,30 +551,200 @@
 				- BlockTraffic			(BLUE-GREEN)
 				- AfterBlockTraffic		(BLUE-GREEN)
 				- End
-	===================================================
-	CodeBuild:
-	===================================================
-		Output artifacts stored in S3 bucket
-		Logs can be stored both in CW Logs and S3 bucket
+ 
 	===================================================
 	CodePipeline:
 	===================================================
-		- Pipeline is a series of Stages
-		- Stages is composed of serial or parallel Actions
-		- Actions are of 6 types: SBT DAI
-			- Source
-			- Build 
-			- Test 
-			- Deploy
-			- Approval 
-			- Invoke
+			- Pipeline is a series of Stages
+			- Stages is composed of serial or parallel Actions	
+
+			- CodePipeline Trigger:
+					- Source of the trigger could be ECR, S3 (ideal = versioned S3), GitHub, CodeCommit
+					- The actual trigger mechanism is either a 
+							~ CloudWatch Event [*** RECOMMENDED ***]
+							~ due to Pipeline periodically checking for changes
+					- When Amazon S3 is the source provider for your pipeline, you may zip your source file or files into a single .zip and upload the .zip to your source bucket. You may also upload a single unzipped file; however, downstream actions that expect a .zip file will fail.
+					
+			- Action:
+					- Serial actions have different runOrder
+					- Parallel actions have same runOrder and are grouped into an "ActionGroup"
+					- Actions are of 6 types: SBT DAI
+								1. Source
+								2. Build 
+								3. Test 
+								4. Deploy
+								5. Approval 
+								6. Invoke	'' Invoke action lets you invoke Lambda function
+					- An Action usually executes in the region where pipeline runs, but an Action may execute in a region different from where the pipeline runs
+					- An action has a provider (like CodeBuild, Jenkins, Custom, etc.)
+					- Action Failure:
+							~ failure is when an action is not completed successfully
+							~ You can retry the latest failed actions in a stage without having to run a pipeline again from the beginning
+							~ You retry the stage that contains the actions. All actions that are still in progress continue their work, and failed actions are triggered once again
+					- Manual Approvals:
+							~ When you add an approval action to a stage in the pipeline, the pipeline execution stops. And, someone with the required IAM permissions can approve or reject the action
+							~ Examples: 
+								You want someone to perform a code review or change management review before a revision is allowed into the next stage.
+								You want someone to perform manual quality assurance testing on the latest version of an application, or to confirm the integrity of a build artifact, before it is released.
+								You want someone to review new or updated text before it is published to a company website.
+							~ IAM user can be notified via notification to SNS Topic:
+								The message delivery can be email or SMS or SQS message or HTTP/HTTPS endpoints or AWS Lambda functions
+								The message contains Specify a URL for Review, Comments for Approvers  or No Configuration Options
+							~ IAM user needs to have "AWSCodePipelineApproverAccess" policy for approving or rejecting approval actions
+			
+			- Artifacts & Artifact Bucket(s):
+					- Each action can ingest one or more input artifacts from a specific S3 bucket
+					- Each action can egest one or more output artifacts into a specific S3 bucket
+					- Artifacts are usually zipped up before storing
+					- The S3 bucket with special name "codepipeline-<region>-<12-digit random number>"
+								like codepipeline-us-west-2-899384784820
+					- Cross-region actions in a pipeline: You must have one artifact bucket per Region where you plan to execute an action
+					- Every input artifact for an action must match the output artifact of an action earlier in the pipeline, whether that action is immediately before the action in a stage or runs in a stage several stages earlier
+					- AWS CFN: If you use S3 as a source repository, you must zip the template and template configuration files into a single file before you upload them to an S3 bucket. For other repositories, such as GitHub and AWS CodeCommit, upload artifacts without zipping them
+			
+			- Cross-Region Action:
+					- A pipeline is scoped to executing in a region. Its Artifact bucket is also in a specific region
+					- But you can have AWS-provided actions running in a different region in your pipeline
+					- DEFINITON: When an AWS service is the provider for an action, and this action type/provider type are in a different AWS Region from your pipeline, this is a cross-Region action
+					- When you create or edit a pipeline, you must have an artifact bucket in the pipeline Region and then you must have one artifact bucket per Region where you plan to execute an action
+					- If you use the console to create a pipeline or cross-Region actions, default artifact buckets are configured by CodePipeline in the Regions where you have actions. When you use the AWS CLI, AWS CloudFormation, or an SDK to create a pipeline or cross-Region actions, you provide the artifact bucket for each Region where you have actions.
+					- You CANNOT create cross-Region actions for the following action types:
+						Source actions
+						Third-party actions
+						Custom actions
+					- You CAN create cross-region actions for :
+						Build
+						Test
+						Deploy
+						Approve 
+						Invoke
+					- When a pipeline includes a cross-Region action as part of a stage, CodePipeline replicates the input artifacts of the cross-Region action from the pipeline Region to the action's Region.
+
+			- Action type:
+					- A pre-configure action that you develop and provide to customers as a service is called as an "Action type"
+					- One of the key components of an action type is the Executor configuration i.e. how does Pipeline execute that action. There are two models of integration between the Pipeline and action type:
+						~ Lambda: The action type owner writes the integration as a Lambda function, which is invoked by CodePipeline whenever there is a job available for the action.
+						~ JobWorker: The action type owner writes the integration as a job worker that polls for available jobs on customer pipelines. The job worker then runs the job and submits the job result back to CodePipeline by using CodePipeline APIs. This is a great way to get On-premise actions included in the pipeline.
+			
+			- Custom Action:
+					- It is similar to Action Type, but is built for your own internal consumption
+					
+			
+			- Invoke AWS Lambda function in an Action:
+					- This seems similar to a custom action 
+					- Action provider = Lambda function
+					- Provide the following permissions to the Lambda function in addition to regular stuff like log access:
+							~ codepipeline:PutJobSuccessResult (your fn calls codepipeline.putJobSuccessResult api call with the continuationToken)
+							~ codepipeline:PutJobFailureResult (your fn calls codepipeline.putJobFailureResult api call with the continuationToken)
+							
+			- Invoke Cloudformation in an Action:
+					- Action provider = CloudFormation
+					- Actions could be 
+							Create a stack 
+							Update a stack
+							Delete a stack 
+							Replace a failed stack 
+							Create change set 
+							Replace change set 
+							Execute change set 
+					- Outputs from the CloudFormation stack are converted into a json-formatted file and then zipped within the pipeline outout artifact
+					- You identify two files in the Action configuration: 
+							~ Cloudformation stack template file: which defines your stack 
+							~ Cloudformation template configuration file: which defines Parameters, Tags and Stack Policies for your stack
+							~ You also identify to the action: 
+									~ CAPABILITY_IAM, CAPABILITY_NAMED_IAM (IAM resources with custom names), CAPABILITY_AUTO_EXPAND (nested stacks)
+									~ If you don't specify either of these capabilities, AWS CloudFormation returns an InsufficientCapabilities error.
+							~ If you use S3 as a source repository, you must zip the template and template configuration files into a single file before you upload them to an S3 bucket. For other repositories, such as GitHub and AWS CodeCommit, upload artifacts without zipping them
+					- Parameter overrides let you specify template parameter values that override values in a template configuration file. 
+					***************** The overriding values come from the CodePipeline artifact *******************************
+					There are two functions that fetch information from the CodePipeline artifact
+						~ Fn::GetArtifactAtt 	: gets the attribute of the CodePipeline artifact
+								"Fn::GetArtifactAtt" : [ "artifactName", "attributeName" ] 
+								They keyes are as follows: BucketName, ObjectKey, URL
+						~ Fn::GetParam			: gets the value associated to the key name in the 
+								"Fn::GetParam" : [ "artifactName", "JSONFileName", "keyName" ]
+								example: "Fn::GetParam" : ["WebStackOutput", "stack-output.json", "URL"]
+
+		
+	===================================================
+	CodeBuild Artifacts v/s CodePipeline Artifacts
+	===================================================
+			- These artifacts are different remember
+			- CodeBuild artifact is the end result of the CodeBuild. It usually lands up in an S3 bucket that CodeBuild defines 
+			- But then the same code is additionally copied to CodePipeline artifacts bucket as well
+					
 	
 	===================================================
-	CloudWatch Logs subscriptions:
+	Jenkins on AWS:
 	===================================================
-		Downstream receipients could be:
+			- CI/CD tool that can replace one or more of the following CodeBuild, CodeDeploy, CodePipeline
+			- Due to deep integration with AWS, Jenkins can replace one or more of the native CI/CD components
+			
+			- Jenkins on EC2
+					~ Architecture includes Master & Slave nodes
+							- Master is also called Server node
+							- You can have one or more Master nodes
+							- Slave is also called Build node or Worker node 
+							~ A Build node contains an agent that communicates with the master server
+					
+					~ Each Jenkins node can get deployed to EC2 instance
+							~ All nodes can run on the same machine 
+							~ Nodes could be distributed across many machines
+							~ A Build node contains an agent that communicates with the master server
+							
+					~ Master node configuration: 
+							- Master node configuration stored in $JENKINS_HOME directory and not a database. Hence, redundancy is difficult
+									- If failures detected on EC2 instance, 
+											- then Cloudwatch alarm for "metric=StatusCheckFailed:System and statistic=Average" can trigger Instance recovery  - OR ASG of size=1 with a Golden AMI could be used
+									- Alternatively, $JENKINS_HOME can be mounted on an EFS
+					
+					~ Worker node:
+							- The Worker node can be run on Spot instances 
+							- The Worker node runs a Worker agent. This eliminates the need to install full Jenkins package 
+							- The agent enables bi-directional traffic between Master and Worker
+							- Plan for Two Executors per Core 
+							
+					~ Build Process:
+							- Master node schedules the jobs based on the "Jenkinsfile" and assigns a Build node to execute the same
+			
+			- Jenkins on ECS
+					
+					~ Create a Jenkins Master Service 
+							- Use official Jenkins Master docker image as the base
+							- Push the image to ECR 
+							- Persist the $JENKINS_HOME to data volume container
+							
+					~ Create a Jenkins Worker Service	
+							- Use official JNLP docker image as the base 
+							- Label the Jenkins worker
+							- When creating a job in the Jenkins master you can specify which type of Amazon ECS worker you want for the job. Just specify the label used in the Amazon ECS worker template configuration in the Restrict where this Project can run field
+			
+			- Jenkins with AWS 
+				Jenkins provides many plugins for AWS services 
+					~ S3 plugin can be used to pull and push data to s3 (example: backup $JENKINS_HOME directory to S3)
+					~ CodeBuild plugin enables build jobs to be sent to CodeBuild instead of Jenkins worker nodes. Plugin uses IAM users
+					~ ECR plugin can be used to pull and push docker images to ECR
+					~ ECS plugin can be used to start ECS task/service using a docker image
+					~ Jenkins can push application and tests to AWS Device farm for testing across pool of physical devices
+					~ CodeCommit plugin can be used to pull code/configs (example: Security specified IP addresses, allowed AMIs)
+				AWS Services calling Jenkins
+					~ CodePipeline can invoke Jenkins to build applications 
+	
+	
+	===================================================
+	Blue/Green deployment on AWS
+	===================================================
+			- 
+
+
+	
+	===================================================
+	CloudWatch Logs Subscriptions:
+	===================================================
+		- A subscription filter could be created on a cloudwatch log and the resuting events could be streamed to downstream recipients
+		- Downstream receipients are the FOLLOWING THREE:
 			- trigger Lambda
-			- send to Kinesis stream
+			- send to Kinesis Stream
 			- send to Kinesis Firehose
 	
 	===================================================
@@ -261,54 +754,16 @@
 			- trigger Lambda
 			- send to Kinesis stream
 			- send to Kinesis Firehose
-		
-	===================================================
-	***THREE OPTIONS*** for S3 Event notifications:
-	===================================================
-			s3 natively 
-				gives object level event notification
-				DOES NOT give bucket level notification
+			- and other EC2 services
 
-			cw events gives S3 notifications at two levels
-				** bucket level event notification
-				*--* object level event notification **** requires cloudtrail on the S3 bucket to be enabled *****
-						dependency on cloudtrail (see following points0
-
-			cloudtrail provides notification of three types and can have downstream targets like S3, Lambda, DynamoDB in the same or different account
-				** management events for s3
-				*--* data events for S3 exclusively. This setup is needed if you want CW events for object-level activity
-						in the cloudtail definition for S3:
-							5 event selectors can be defined on the S3 buckets
-							Each event selector can have upto 50 buckets
-				
-
-	===================================================
-	CloudTrail supports:
-	===================================================
-	- Data events for S3 exclusively
-		- Management events for all  AWS services including S3
-		- Insights
-	
-	CloudTrail MANAGEMENT EVENTS vs Cloudwatch EVENTS
-			CloudTrail 
-				- captures events regarding API calls
-				- cloudtrail does not emit these events to cloudwatch (this is one of the few services that does not send data 
-				
-			Cloudwatch
-				- most services emit events regarding changes in them to cloudwatch, but there are exceptions like cloudtrail, receiving public events from service health dashboard
-				- for exceptions like cloudtrail which do not emit its captured events to cloudwatch, you can still use the event-type = "AWS API Call via CloudTrail" to fetch the cloudtrail events. Rules created using the method works only in the region where the service created the event.
-				- cloudwatch event rule:
-					- rule is triggered by a matching "event pattern" or by a time-based scheduled. A triggered rule calls the "target": 
-						- event pattern = AWS service name + event type + operations
-						- target
 	===================================================
 	Cloudwatch Event type:
 	===================================================
 				Event triggered at a particular day/time
 				Event triggered on a schedule
-				AWS Management Console Sign-in Events
+				AWS Management Console Sign-in can trigger CW Events
 				CodePipeline:
-					state changes at following levels - Pipeline, Stage, Action:
+					state changes at following levels = Pipeline, Stage, Action:
 						state change event = STARTED, FAILED, SUCEEDED, RESUMED, CANCELED, SUPERSEDED
 				EC2 Instance:
 					event type = EC2 Instance State-change Notification
@@ -318,7 +773,10 @@
 					event type = ECR Image Action - DELETE  [values = SUCCESS, FAILURE]
 					event type = ECR Image Scan [returns count for various severity levels in the "finding-severity-counts" file]
 				ASG:
-					Launch successful, Launch unsuccessful, Terminate successful, Terminate unsuccessful, Launch lifecycle Action(i.e. PENDING:WAIT), Terminate lifecycle Action(TERMINATING:WAIT), EC2 Auto Scaling Instance Refresh Checkpoint Reached
+					Launch successful, Launch unsuccessful, Terminate successful, Terminate unsuccessful, 
+					Launch lifecycle Action(i.e. PENDING:WAIT state / Detail type = EC2 Instance-launch Lifecycle Action), 
+					Terminate lifecycle Action(TERMINATING:WAIT / Detail type = EC2 Instance-terminate Lifecycle Action), 
+					EC2 Auto Scaling Instance Refresh Checkpoint Reached
 				Config:
 					event type = API Call via Cloudtrail, Config Item Change, Rule Compliance Change, Rules Re-evaluation Status, Config Snapshot Delivery Status, Config History Delivery Status
 							Choose Config Configuration Item Change to get notifications when a resource in your account changes.
@@ -347,6 +805,7 @@
 									completed-phase:SUBMITTED,PROVISIONING,DOWNLOAD_SOURCE,INSTALL,PRE_BUILD,BUILD,POST_BUILD,UPLOAD_ARTIFACTS,FINALIZING
 									completed-phase-status: TIMED_OUT,STOPPED,FAILED,SUCCEEDED,FAULT,CLIENT_ERROR
 				CodeDeploy:
+						- Event-type = state changes in a Deployment or any of the instances in a Deployment Group
 						- You can choose the following types of targets when using CloudWatch Events as a part of your AWS CodeDeploy workflow:
 								~ AWS Lambda functions
 								~ Amazon Kinesis Data Streams
@@ -360,23 +819,54 @@
 						- the "receiver" AWS account grants permissions to its "default event bus" to the "sender" account-id and/or the "sender" organization-id
 						- the "sender" AWS account, in it's cw event rule, mentions the target as "Event bus of another AWS account" and mentions the receiver account-id
 						- while creating the cw rule in the "receiver" AWS account, edit the cw event pattern rule to manually include the account-id of the "sender" accounts
+		
+				AWS RDS:
+					- Four categories (below) with multiple event types under it:
+							DB Instance	
+							DB Snapshot 
+							DB Security Group
+							DB Parameter Group
+		
+	===================================================
+	***THREE OPTIONS*** for S3 Event notifications:
+	===================================================
+			s3 natively 
+				gives object level event notification
+				DOES NOT give bucket level notification
 
+			cw events gives S3 notifications at two levels
+				** bucket level event notification
+				*--* object level event notification **** requires cloudtrail on the S3 bucket to be enabled *****
+						dependency on cloudtrail (see following point)
+
+			cloudtrail provides notification of three types and can have downstream targets like S3, Lambda, DynamoDB in the same or different account
+				** management events for s3
+				*--* data events for S3 exclusively. This setup is needed if you want CW events for object-level activity
+						in the cloudtrail definition for S3:
+					- 5 event selectors can be defined on the S3 buckets. Each event selector can have upto 50 destination buckets
+				
 
 	===================================================
-	AWS Config:
+	CloudTrail supports:
 	===================================================
-			Multi-Account Multi-Region Data Aggregation
-				- Source AWS account or Source organization --sends config and compliance data to--> an aggregator within an aggregator account
-				- As a source AWS account owner, authorization refers to the permissions you grant to an aggregator account and region to collect your AWS Config configuration and compliance data. Authorization is not required if you are aggregating source accounts that are part of AWS Organizations.
-				- Two step process:
-					** create an aggregator object in the aggregator AWS account
-					** grant authorization to the aggregator accounts for specific AWS accounts and their source regions from which data should be aggregated
-						
-			AWS Config Custom Rule
-				Rule is evaluated for a given scope when the config changes or periodically
-				Scope: Tags OR Resources OR All Changes
-				Trigger: is run either Periodically OR when a config changes
-				Lambda function: Lambda function is executed
+	3 types of events:
+		- Data events for S3 exclusively
+		- Management events for all  AWS services including S3
+		- Insights
+	
+	- CloudTrail MANAGEMENT EVENTS vs Cloudwatch EVENTS
+			CloudTrail 
+				- captures events regarding API calls
+				- cloudtrail does not emit these events to cloudwatch (this is one of the few services that does not send data)
+				
+			Cloudwatch
+				- most services emit events regarding changes in them to cloudwatch, but there are exceptions like cloudtrail, receiving public events from service health dashboard
+				- for exceptions like cloudtrail which do not emit its captured events to cloudwatch, you can still use the event-type = "AWS API Call via CloudTrail" to fetch the cloudtrail events. Rules created using the method works only in the region where the service created the event.
+				- cloudwatch event rule:
+					- rule is triggered by a matching "event pattern" or by a time-based scheduled. A triggered rule calls the "target": 
+						- event pattern = AWS service name + event type + operations
+						- target
+
 	
 	===================================================
 	AWS service-specific service-linked roles:
@@ -388,15 +878,14 @@
 			- To allow an IAM entity to attach a specific service-linked role, the actions are iam:AttachRolePolicy, iam:PutRolePolicy
 			- To allow an IAM entity to delete a specific service-linked role, the actions are iam:DeleteServiceLinkedRole, iam:GetServiceLinkedRoleDeletionStatus
 			- To allow an IAM entity to pass a specific service-linked role, the actions are iam:ListRoles, iam:PassRole
-
-	
+ 
 	AWS Organization service's access on the member accounts:
 			- when you create an account in an organization or you accept an invitation to join your existing account to an organization, AWS Organizations provisions the member account with a service-linked role named "AWSServiceRoleForOrganizations".
 			- this "AWSServiceRoleForOrganizations" role exists in every member account that is connected to the organization
 			- only the AWS Organizations service itself can assume this "AWSServiceRoleForOrganizations" role. (trust policy)
 			- the "AWSServiceRoleForOrganizations" role has permissions that allow AWS Organizations to create service-specific "IAM service-linked roles" for other AWS services
 	
-	AWS Services accessing AWS Organization and member accounts:
+	AWS Services accessing AWS Organization and its member accounts:
 			- "Trusted" AWS services can have "trusted" access to an AWS org and its member accounts on your behalf.
 			- To grant an AWS service "trusted" access to an organization and its member account, 
 				the user 
@@ -453,6 +942,7 @@
 			Detached state:
 					~ InService -> Detached
 			Auto scaling processes:
+				These can be suspended during an autoscaling operation
 					~ Launch			: adds a new Amazon EC2 instance to an Auto Scaling group
 					~ Terminate 		: removes an Amazon EC2 instance from the group
 					~ AddToLoadBalancer : adds instances to the attached load balancer target group or Classic Load Balancer when they are launched
@@ -473,7 +963,8 @@
 		- Each step in the workflow is state
 		- A state represents a single unit of work that another AWS service performs
 		- An Execution is an instance of running your state machine		
-		- Two types of executions 
+		- Two types of executions -
+		
 				Standard: exactly-once execution which can run upto 1 year; priced per state transition
 				Express: atleast-once execution which can run upto 5 minutes; priced per number and duration of executions
 		- Types of state:
@@ -526,14 +1017,35 @@
 				Transform:
 					'
 				Resources: 		// **** the ONLY mandatory section ****
-					'
-					Init		// Configuration tasks for cfn-init script for EC2 resources
 					Interface	// Defines grouping and ordering of input parameters when they are displayed in the AWS CloudFormation console
 					Designer	// Defines ordering of resource in the Cloudformation Designer
 					Resource-1:
 						CreationPolicy
 						DeletionPolicy
-						MetaData
+						MetaData:
+							AWS::CloudFormation::Init:
+								configSets: 
+									ascending: 
+										- "config1"
+										- "config2"
+									descending: 
+										- "config2"
+										- "config1"
+								config1: 
+									packages: 
+									:			'download and install pre-packaged applications and components. On Windows systems, supports only MSI installer.
+									groups: 
+									:			' create Linux/UNIX groups and to assign group IDs. The groups key isn't supported for Windows systems
+									users: 
+									:			' create Linux/UNIX users on the EC2 instance. The users key isn't supported for Windows systems
+									sources: 
+									:			' download an archive file and unpack it in a target directory on the EC2 instance
+									files: 
+									:			' create files on the EC2 instance- content can be either inline OR from a URL
+									commands: 
+									:			' run commands on the EC2 instance.
+									services: 
+									:			' which services should be enabled or disabled when the instance is launched. On Linux systems, this key is supported by using sysvinit. On Windows systems, it's supported by using the Windows service manager.
 						UpdatePolicy
 						UpdateReplacePolicy
 						DependsOn
@@ -546,6 +1058,7 @@
 						DependsOn					
 				Outputs:
 					'
+					
 			- Transform section:
 				- The optional Transform section specifies one or more macros that AWS CloudFormation uses to process your template
 				- 5 macro types:
@@ -598,14 +1111,14 @@
 								
 			- WaitCondition in a stack:
 							- The CreationPolicy attribute of a specific resource can cause wait condition during the creation of the resource
-							- A stack resource called AWS::CloudFormation::WaitConditionHandle can introduce wait condition in a stack template
+							- A stack resource called AWS::CloudFormation::WaitCondition can introduce wait condition in a stack template
 							- A WaitCondition resource has two required properties: Handle is a reference to a WaitConditionHandle declared in the template and Timeout is the number seconds for AWS CloudFormation to wait. 
 							- EXAMPLE:
 											"myWaitCondition" : {
 												"Type" : "AWS::CloudFormation::WaitCondition",
 												"DependsOn" : "Ec2Instance",				// trigger: This wait condition kicks in as soon as Ec2Instance resource is in CREATE COMPLETE
 												"Properties" : {
-													"Handle" : { "Ref" : "myWaitHandle" },	// ! resolves to a pre-signed URL that you can use to signal success or failure 
+													"Handle" : { "Ref" : "myWaitHandle" },	// resolves to a pre-signed URL that you can use to signal success or failure 
 													"Count"  : 5							// default count is 1
 													"Timeout" : "4500"						// seconds
 												}
@@ -1969,24 +2482,35 @@
 									Compare the value generated by the above command with the fingerprint displayed in the AWS EC2 Console
 						- To disallow a particular user or key:
 							- Edit the ~/.ssh/authorized_keys and remove the public key for the user
-							
+
+				Amazon Machine Image: provides information required to launch an EC2 Instance
+						AMI = 	Launch permission (i.e. RBAC for AWS accounts) 
+										+
+								Block Device Mapping specifies the volumes (EBS and Instance-store) to attach to the EC2 instance
+										+ 
+								EBS Snapshots of disks to attach
+										+
+								Template for the root volume of the Instance-stored backed EC2 Instance
+						
+						
 				Block Device Mapping:
 						- The mapping defines the block devices (instance store volumes and EBS volumes) to attach to an instance
 						- Note that all NVMe instance store volumes supported by an instance type are automatically enumerated and assigned a device name on instance launch
 						- Entries within the mapping:
-								- Device name used within EC2 instance (like /dev/sd01, /dev/sda, .......)
+								- Volume or device name used within EC2 instance (like /dev/sd01, /dev/sda, .......)
 								- Instance store volumes: <ephemeral[0-23]> 
 								- NVMe volumes are automatically enumerated
 								- EBS volumes:
-									- ID of the snapshot used to create the block device (like snap-xxxxx)
+									- ID of the EBS snapshot used to create the block device (like snap-xxxxx)
 									- Size of the volume in GiB
 									- Delete the volume on instance termination = true / false 
 									- Volume type = gp2, gp3, io1, io2, st1, sc1, standard 
 									- Number of IOPS for io1, io2
 						- Using Block Device Mapping:
 								- You can specify a block device mapping as part of creating an AMI (Instance store volumes are not supported in AMI specs)
+								- You can modify the block device mapping of the AMI when launching an instance from the AMI (like attaching additional volumes at launch time)
 								- You can attach block devices launching an Instance
-								- You can modify the block device mapping of the AMI when launching an instance from the AMI
+								
 										
 				ENI
 					1 MAC address
@@ -2141,7 +2665,7 @@
 					- Spot Instances: 
 								~ Unused EC2 Instances launched when bid price is higher than market price
 								~ Pay by the second
-										** supported by auto-scaling, EMR (but NOT Redshift)
+										** supported by auto-scaling groups, EMR (but NOT Redshift)
 										** If the Spot price exceeds your maximum price for a given instance or if capacity is no longer available, your instance will automatically be terminated (or be stopped/hibernated, if you opt for this behavior on persistent request). 2-minutes grace period.
 					- Reserved Instances: 
 								~ 1 or 3 years commitment to an EC2 Instance Family & Region
@@ -2151,12 +2675,13 @@
 											- Standard can be bought in the RI Marketplace.
 											- Standard CANNOT be exchanged
 											- Instance Family CANNOT be modified
+											- Tenancy CANNOT be modified
 											- Instance Size, Scope (=Region, Zonal), Network, Platform/OS can be modified
 									- Convertible	: 
 											- Convertible cannot be sold in the RI Marketplace. 
 											- Convertible cannot be bought in the RI Marketplace.
 											- Convertible can be exchanged. 
-											- Convertible allows for exchange with NEW Instance Family, Instance Size, Platform/OS, Scope (=Region, Zonal) and Tenancy 
+											- Convertible allows for exchange with NEW Instance Family, NEW Tenancy, Instance Size, Platform/OS, Scope (=Region, Zonal)
 											- Exchange can happen as long as the exchange results in the creation of Reserved Instances with equal or greater value. 
 											COnvertible enables you to merge 2 or more convertible instances, the term of the new instance is the greater of the original instances
 								~ Two scopes:
@@ -2181,13 +2706,13 @@
 											- Monthly
 					
 					- On-Demand Capacity reservation:
-								~ By creating Capacity Reservations, always have access to EC2 capacity in a specific AZ when you need it, for as long as you need it
+								~ By creating Capacity Reservations, always have access to EC2 capacity in a specific AZ
+								~ No 1-year or 3-year commitment
 								~ EC2 Instance(s) are reserved within an AZ
 								~ EC2 Instance(s) are reserved within a Local Zone
-								~ No 1-year or 3-year commitment
 								~ Billing starts as soon as the capacity is provisioned
 								~ You are charged the equivalent On-Demand rate whether you run instances in the reserved capacity or not
-								~ If you do not run instances that match the reservation, you still pay and this shows up as "UNUSED RESERVATION" on your EC2 bill. 
+								~ If you do not run instances that match the reservation, you still pay and this shows up as "UNUSED RESERVATION" on the bill. 
 								~ When you run an instance that matches the attributes of a reservation, you just pay for the instance and nothing for the reservation 
 								~ Discounts from Savings Plan or Regional Reserved Instances can be applied
 								~ Discounts from Zonal Reserved instances cannot be applied
@@ -2195,22 +2720,45 @@
 					- Savings Plan: 
 								~ 1 or 3 years of commitment to a consistent amount of usage, in USD per hour.
 								~ This does not reserve capacity
-								~ This can be applied against On-Demand, On-Demand Capacity Reservtion and Reserved Instances
+								~ This can be applied against On-Demand, Reserved Instances and On-Demand Capacity Reservation
 					- Scheduled Instances: 
 								~ EC2 Instance Family + Size is scheduled at recurring time-slots for a period of 1 year
 					- Dedicated Instances: 
 								~ Pay, by the hour, for instances that run on single-tenant hardware
 					- Dedicated Host: 
-								~ Pay for a physical host that is fully dedicated to running your instances, and bring your existing per-socket, per-core, or per-VM software licenses to reduce costs. 
-								~ Physical host reserved for you, to accomodate BYOL scenario and provide full visibility into sockets, core
-				Fleet:
+								~ Pay for a physical host that is fully dedicated to running your instances
+								~ Use your existing per-socket, per-core, or per-VM software licenses, including Windows Server, Microsoft SQL Server, SUSE, and Linux Enterprise Server
+				
+				Tenancy attribute:
+					- Can be defined at EC2 level or VPC level
+					- Tenancy defined at EC2 level overrides tenancy defined at VPC level
+					- Three values:
+						~ default 	: instance launched into shared hardware
+						~ dedicated : instance launched as dedicated instance into a single tenant hardware
+						~ Host  	: instance launched on a particular host
+					- Changing tenancy from one to the other:
+						x default to dedicated is NOT acceptable
+						x default to host is NOT acceptable 
+						x dedicated to default is NOT acceptable
+						x host to default is NOT acceptable
+						Y dedicated to host and host to dedicated is acceptable
+					
+ 				Fleet:
 					- A configuration that launches multiple instance types across multiple purchasing options across multiple AZ within a region with a cap on the max $/hour
-					- EC2 Fleet
-					- Spot Fleet 
+					- Two types:
+							~ EC2 Fleet
+							~ Spot Fleet 
 					
 				EC2 Fleet:
-					- Fleet with Purchasing options = On-Demand only OR Spot Instances only OR On-Demand + Spot
+					- EC2 Fleet Purchasing options = 
+									On-Demand only OR 
+									
+									Spot Instances only OR 
+									
+									On-Demand + Spot
+					- The fleet tries to meet the target capacity until it reaches the maximum amount that you’re willing to pay
 					- The On-Demand instances could be furnished by Reserved Instances or On-Demand Capacity Reservation
+					- Additionally savings plan could be applied to On-demand instances
 					- The Spot instances are provisioned only if your purchase price > Spot price
 							- Spot instances are fulfilled from Spot capacity pools (or in short Spot pools)
 							- A Spot capacity pool is a set of unused EC2 instances with the same instance type and Availability Zone
@@ -2223,17 +2771,73 @@
 							Example launch configuration = C1.medium (25 On-Demand) + C2.large (10 On-Demand) + T1.Medium (50 Spot) + T2.small (100 Spot)
 											AND 
 									a total max $/hour = 500
-					- The fleet tries to meet the target capacity until it reaches the maximum amount that you’re willing to pay
-					- Three reuqest types:
+					- Three request types:
 							~ Instant  : Request to API is one-time synchronous. The response contains instance-ids that were launched and error for instance types that could not be 
 							~ Request  : Request to API is one-time asynchronous. Fleet does not try to maintain capacity by replenishing interrupted Spot instances.
 							~ Maintain : Request to API is one-time asynchronous. Fleet tries to maintain capacity by replenishing interrupted Spot instances.
 				
 				Spot Fleet:
 					- Fleet with Purchasing options = Spot Instances + optional On-Demand
+					- The fleet tries to meet the target capacity until it reaches the maximum amount that you’re willing to pay
 					- Rest of the options are similar to EC2 Fleet
 						like Spot capacity pools, Allocation strategy
-					
+						
+						
+				EC2 Instance Recovery:
+					~ Different from host recovery that dedicated hosts can undergo
+					~ If failures detected on underlying host, then Cloudwatch alarm for "metric=StatusCheckFailed:System and statistic=Average" is triggered 
+						~ Failure examples are Loss of network connectivity, Loss of system power, Hardware failure, Software failure
+					~ Recovered instances retain same Instance ID, Private IPs, Elastic IPs, EBS volume attachments, Instance metadata
+					~ Since instance was migrated, all data in memory is lost
+					~ Instances with attached instance-store storage cannot be recovered
+					~ EC2 requirement:	
+							- Uses one of the following instance types: A1, C3, C4, C5, C5a, C5n, C6g, C6gn, Inf1, M3, M4, M5, M5a, M5n, M5zn, M6g, P3, P4, R3, R4, R5, R5a, R5b, R5n, R6g, T2, T3, T3a, T4g, high memory (virtualized only), X1, X1e
+							- Runs in a virtual private cloud (VPC)
+							- Uses default or dedicated instance tenancy
+					NOTE: Your instance may subsequently be retired if automatic recovery fails and a hardware degradation is determined to be the root cause for the original system status check failure.
+
+	===================================================
+	Dedicated Hosts and Dedicated Instances:
+	===================================================
+
+			Dedicated Host v/s Dedicated Instance:
+				~ Per-host billing V/S Per-instance billing
+				~ Provides visibility of the number of sockets and physical cores v/s No visibility
+				~ Allows you to consistently deploy your instances to the same physical server over time v/s Not supported 
+				~ Provides additional visibility and control over how instances are placed on a physical server v/s Not supported
+				~ Automatic instance recovery is supported in both cases
+				~ BYOL is supported v/s not supported
+				
+			Dedicated Hosts and Dedicated Instances - AWS Config Recording:
+				~ AWS Config recognizes Dedicated Host and the instances on top of them as RELATIONSHIPS
+				~ AWS Config records "Configuration Items" for the Dedicated Hosts and the instances on them
+		
+			Dedicated Host and Dedicated Instances - License Reporting:
+				~ Leverage AWS Config recorder for license reporting
+				~ Turn ON recording at 3 levels - AWS Config, Dedicated Host and Instance
+				~ After AWS Config starts recording configuration changes to your hosts and instances, you can get the configuration history of any host that you have allocated or released and any instance that you have launched, stopped, or terminated. 
+				For example, at any point in the configuration history of a Dedicated Host, you can look up how many instances are launched on that host, along with the number of sockets and cores on the host. For any of those instances, you can also look up the ID of its Amazon Machine Image (AMI). You can use this information to report on licensing for your own server-bound software that is licensed per-socket or per-core.
+
+			[Dedicated Host] Host Recovery:
+				~ If failure detected on a Dedicated Host, then instances automatically restarted on new replacement hosts
+						~ Failure examples are Loss of network connectivity, Loss of system power, Hardware failure, Software failure
+				~ Replacement host gets new Host ID, but inherits AZ, Instance Type, Tags, Auto placement settings
+				~ Recovered instances retain same Instance ID, Private IPs, Elastic IPs, EBS volume attachments, Instance metadata
+				~ When all of the instances have been recovered on to the replacement Dedicated Host, the impaired Dedicated Host is released
+				~ Instance store-backed EC2 instances are not automatically recovered. You need to manually copy the data to the new instance
+				~ Host recovery integrated with and updates AWS License Manager as part of Host Recovery 
+				
+			[Dedicated Instance] 
+				~ Placed by EC2 Service on hosts dedicated to customer
+				~ User does not get to place instances
+				~ When you launch an Amazon EBS-backed Dedicated Instance, the EBS volume doesn't run on single-tenant hardware
+				~ ASGs can be used with Dedicated Instances
+				~ dedicated instances can be recovered 
+				~ User can launch dedicated instances in a VPC with tenancy of default, dedicated but not host 
+					EC2 tenancy overrides VPC tenancy, but host VPC tenancy cannot be over-written as the network config is different
+			
+
+				
 	===================================================
 	EBS:
 	===================================================
@@ -2299,21 +2903,8 @@
 						- You cannot create snapshots from hibernated instances
 						- Having multiple pending snapshots of a volume can result in reduced volume performance until the snapshots complete.
 						- When a snapshot is created from a volume with an AWS Marketplace product code, the product code is propagated to the snapshot
-						- Snapshots only capture data that has been written to your Amazon EBS volume at the time the snapshot command is issued. This might exclude any data that has been cached by any applications or the operating system
-						- 
-				
-				- Quotas: 
-						- 10000 EBS Snapshots per Account
-						
-				- Storage & Encryption:
-						- EBS Snapshots are stored in S3 (system S3 and not user's S3), but available from EC2 APIs and EC2 console, but not from S3 console
-						- If source EBS volume is encrypted, snapshot is encrypted using same keyes 
-						- If source EBS volume is not encrypted, snapshot is not encrypted
-						- Volumes that you create from an unencrypted snapshot that you own or have access to can be encrypted on-the-fly.
-						- When you copy an unencrypted snapshot that you own, you can encrypt it during the copy process.
-						- When you copy an encrypted snapshot that you own or have access to, you can reencrypt it with a different key during the copy process.
-						- EBS Volume created from a snapshot must be of same size or larger than the snapshot size
-				
+						- Snapshots only capture data that has been written to your Amazon EBS volume at the time the snapshot command is issued. This might exclude any data that has been cached in memory by any applications or the operating system
+
 				- Relations among incremental snapshots of different volumes
 						~ Vol 1 has 10 GiB of data. Because Snap A is the first snapshot taken of the volume, the entire 10 GiB of data is copied and stored.
 						~ Vol 2 is created from Snap A, so it is an exact replica of Vol 1 at the time the snapshot was taken.
@@ -2323,6 +2914,21 @@
 								##########################################################################################################################################
 							****<>*<>*<><><> Snap B is an incremental snapshot of Snap A, even though it was created from a different volume ****<>*<>*<><><>
 								##########################################################################################################################################
+				
+				- Quotas: 
+						- 10000 EBS Snapshots per Account
+						
+				- Storage:
+						- EBS Snapshots are stored in S3 (system S3 and not user's S3), but available from EC2 APIs and EC2 console, but not from S3 console
+						- EBS Volume created from a snapshot must be of same size or larger than the snapshot size
+				
+				- Encryption:
+						- If source EBS volume is encrypted, snapshot is encrypted using same keyes 
+						- If source EBS volume is not encrypted, snapshot is not encrypted
+						- Volumes that you create from an unencrypted snapshot that you own or have access to can be encrypted on-the-fly.
+						- When you copy an unencrypted snapshot that you own, you can encrypt it during the copy process.
+						- When you copy an encrypted snapshot that you own or have access to, you can reencrypt it with a different key during the copy process.
+
 						
 				- Visibility & Sharing: 
 						- EBS Volume is visible at the AZ level, while Snapshots created from the EBS volume are visible at the REGION level
@@ -2379,9 +2985,25 @@
 				- An AMI created from an EC2 instance takes snapshots of every EBS volume and Instance store attached to the instances and saves the same in S3
 				- If any volumes attached to the origin EC2 instance is encrypted, then the new AMI will launch successfully on those instance that support EBS encryption
 				
-		Block Device mapping:
+		AMI Block Device mapping:
+				- The mapping defines the block devices (instance store volumes and EBS volumes) to attach to an instance
 				- AMI's block device mapping will show all storage associated to the config. For root volume, you can increase the volume size, volume type, and "Delete on Termination" flag. You cannot decrease the volume size.
 				- EC2 Instance's block device mapping will show only the actual storage attached to the EC2 instance. The EC2 instance's block device mapping is accessible at 169.254.169.254/latest/meta-data/block-device-mapping
+				- Note that all NVMe instance store volumes supported by an instance type are automatically enumerated and assigned a device name on instance launch
+				- Entries within the mapping:
+						- Device name used within EC2 instance (like /dev/sd01, /dev/sda, .......)
+						- Instance store volumes: <ephemeral[0-23]> 
+						- NVMe volumes are automatically enumerated
+						- EBS volumes:
+							- ID of the snapshot used to create the block device (like snap-xxxxx)
+							- Size of the volume in GiB
+							- Delete the volume on instance termination = true / false 
+							- Volume type = gp2, gp3, io1, io2, st1, sc1, standard 
+							- Number of IOPS for io1, io2
+				- Using Block Device Mapping:
+						- You can specify a block device mapping as part of creating an AMI (Instance store volumes are not supported in AMI specs)
+						- You can attach block devices while launching an Instance
+						- You can modify the block device mapping of the AMI when launching an instance from the AMI
 
 		EBS Elastic Volumes:
 				- With Amazon EBS Elastic Volumes, you can increase the volume size, change the volume type, or adjust the performance of your EBS volumes
@@ -3656,198 +4278,410 @@
 	===================================================
 	RDS:
 	===================================================
-		Managed relational db service supports Amazon Aurora, MySQL, MariaDB, Oracle, SQL Server, and PostgreSQL database engines
-			Managed services include scale compute, scale storage, Replication
-			Provides native db access to users, User still manage app-specific db settings
-			You can logon to schema, but cannot log into the OS
-			RDS uses Stripped EBS storage
-			AWS responsibility: automated backup daily, patching of db + OS, security fixes of db + OS, db update, db upgrade
-			Your responsibility: Manage DB settings, Manage schema, Performance Tuning
-		Two license model:
-			BYOL
-			License Included	
-		DB instance:
-			User specifies the db product + env settings + compute + storage + VPC in which to create the DB
-			A database parameter group (DB Parameter Group) acts as a “container” for engine configuration values / Default is optimized for the engine
-			40 DB instances per account:
-				BYOL - 40 could be Aurora, MySQL, Maria, PostgreSQL, Oracle-BYOL
-				Out of 40, 10 could be Oracle-License Included or SQLServer-License Included
-		Databases or schemas per DB instance:
-			RDS for Amazon Aurora: No limit imposed by software
-			RDS for MySQL: No limit imposed by software
-			RDS for MariaDB: No limit imposed by software
-			RDS for Oracle: 1 database per instance; no limit on number of schemas per database imposed by software
-			RDS for SQL Server: Up to 100 databases per instance see here
-			RDS for PostgreSQL: No limit imposed by software
-		Define Maintenance window: 
-			YOU SHOULD GENERALLY EXPECT OUTAGE DURING RDS MAINTENANCE 
-			Windows is weekly / if user does not specify, AWS randomly chooses a 30-min maintenance window
-			User-defined windows / DB Instance modification, Version upgrade, Software patches, Security+Durability patches during maintenance window
-			RDS Software Update, OS Patching, DB Scaling, General Maintenance:
-				Single-AZ Aproach:
-					Do it during maintenance window as this will require an outage
-				Multi-AZ Approach: 
-					1) Do the necessary changes on STANDBY first 
-					2) Promote the STANDBY to PRIMARY 
-					3) Do the necessary changes on the old primary (Once step 3 is done, remember that there is NO NEED to flip the primary status and confer it on old primary) 
-			Version Upgrade: ****OUTAGE in both cases****
-				Single-AZ Aproach:
-					DO IT DURING THE MAINTENANCE WINDOW ONLY
-				Multi-AZ Approach:
-					1) Upgrade PRIMARY and STANDBY together
-					2) Database service becomes unavailable
-				DO IT DURING THE MAINTENANCE WINDOW ONLY
-			Support:
-				You can control when upgrade to major or minor versions happen
-				Major version supported for 3 years from the date of initial support by RDS
-				Minor version supported for 1 year from the date of initial support by RDS
-			DB upgrade: 
-				To manually upgrade a database instance to a supported engine version, use the Modify DB Instance command on the AWS Management Console or
-					the ModifyDBInstance API and set the DB Engine Version parameter to the desired version. By default, the upgrade will be applied or during 
-					your next maintenance window. You can also choose to upgrade immediately by selecting the Apply Immediately option in the console API.
-				If AWS determines that a new engine MINOR VERSION contains significant bug fixes compared to a previously released minor version, 
-					AWS will schedule automatic upgrades for DB instances which have the Auto Minor Version Upgrade setting to “Yes”. 
-					These upgrades will be scheduled to occur during customer-specified maintenance windows.
-				Testing: Create a DB snapshot of your existing DB instance, restoring from the DB snapshot to create a new DB instance, and 
-					then initiating a version upgrade for the new DB instance. You can then experiment safely on the upgraded copy of your DB instance 
-					before deciding whether or not to upgrade your original DB instance.
-				Backups and Snapshots:
-					In Multi-AZ setup, backups are taken on the STANDBY database to avoid interrupting the PRIMARY database
+			- Managed relational db service supports Amazon Aurora, MySQL, MariaDB, Oracle, SQL Server, and PostgreSQL database engines
+					~ Managed services include scale compute, scale storage, Replication
+					~ Provides native db access to users, User still manage app-specific db settings
+					~ You can logon to schema, but cannot log into the OS
+					~ RDS uses Stripped EBS storage
+					~ AWS responsibility: automated backup daily, patching of db + OS, security fixes of db + OS, db update, db upgrade
+					~ Your responsibility: Manage DB settings, Manage schema, Performance Tuning
+			
+			- Two license model:
+					~ BYOL
+					~ License Included	
+			
+			- DB instance:
+					~ DB instance has unique identifier and database instance name
+					~ DNS name for the DB instance = 
+								<db-instance-name>.<db-instance-id>.<region>.rds.amazonaws.com
+								supply-chain.123456789012.us-east-1.rds.amazonaws.com
+								and 
+								the supply chain instance could host multiple databases like inventory, sales, customer, marketing
+					~ DB instance can contain multiple user-created databases
+					~ DB instance = Environment =  specifies the db product + env settings + compute + storage + VPC in which to create the DB
+					~ A database parameter group (DB Parameter Group) acts as a “container” for engine configuration values / Default is optimized for the engine
+					~ 40 DB instances per account:
+						BYOL - 40 could be Aurora, MySQL, Maria, PostgreSQL, Oracle-BYOL
+						Out of 40, 10 could be Oracle-License Included or SQLServer-License Included
+					~ A DB Subnet Group:
+						A collection of subnets. One subnet IS IDENTIFIED in each AZ. 
+						The subnet group is assigned to DB instance during creation.
+						Amazon RDS then uses that DB Subnet Group and your preferred Availability Zone to select a subnet and an IP address within that subnet. 
+						Amazon RDS creates and associates an Elastic Network Interface to your DB Instance with that IP address
 
-		RTO & RPO:
-			- RTO: Time it takes to restore the system from backups
-			- RPO: Point in the system state to which the system cabe restored
-		Backups, Snapshots & Restoration:
-			Modes of Backups: 
-				- Automated Backups
-				- Manual Backups - User Initiated
-			What gets backed-up in the 'Backup Snapshot'?
-				- The DB instance (including all databases within the instance)
-					AND
-				- The Transaction Logs
-				Backup snapshots are stored in S3 buckets
-				Multiple copies of the snapshots are stored in various AZs for durability
-				The Snapshots are retained for 7(default) to 35 days (MAX)
-				The Backups will be DISABLED, if config set to 0 days
-			Point-In-Time Recovery Mechanism:
-				Automated Backup Snapshot of the DB Instance + Transaction Logs can give you point-in-time recovery to upto 5-minutes in the past
-			Constraints during backup:
-				I/O is suspended when backup is taken
-			Automated:
-				AWS run daily full daily snapshot & captures continuous TX log for point-in-time recovery / Saved in S3
-				Snapshot maintained for 7 (default) to 35 days 
-				User can modify the backup schedule and retention period
-				In Multi-AZ setup, backup is taken from the standby to avoid I/O suspension on the Primary
-				Automated backups are deleted when the DB instance is deleted
-				RPO = System state at (CURRENT TIME - 5 minutes)
-			Manual: 
-				User initiated snapshot / Saved in S3
-				Since I/O is suspended, it is preferred to take backups during maintenance window
-				If the DB instance gets deleted, manually created DB backup snapshots are not deleted
-				Manual snapshots are not used for point-in-time recovery
-			Restoration:
-				RPO for restoration from Automated Backup = System state at (CURRENT TIME - 5 minutes)
-				Always creates a new DB instance with a new endpoint and does not over-write the original source db
-		Max DB Sizes:
-			MS SQL: 4TB
-			Aurora, MySQL, Maria, PostgreSQL, Oracle: 6TB
-			If you start hitting these limits and still want to use RDS database, you will need to explore Data Partitioning by yourself 
-		Data import into RDS:
-			MySQL: mysqldump, mysqlimport
-			Oracle: SQL Loader, data pump
-			Postgresql: pg_dump
-		Scaling Factors:
-			Compute and Storage can be scaled
-			Storage can be scaled UP with no downtime 
-			Storage CANNOT be scaled down
-			MS SQL Server DOES NOT SUPPORT changing the Storage Capacity and the Storage Type / You need to take a snapshot and then restore into a new database with desired configuration
-			Compute scaling results in DB instance unavailability as the instance is moved from from one instance to another 
-				AWS claims it to be few minutes, so do it during maintenance window
-		Query slowness:
-			MYSQL: slow query logs
-			MariaDB: slow query logs
-			Oracle: Trace files
-			SQL Server: Traces - client-side and server-side
-		Billing:
-			Parameters are Compute, Storage, Storage IO (IO requests for Mag & Aurora, Provisioned IOPS for SSD), Backup storage, Data transfer to Internet
-			Billed for each hour your DB instance is running in an available state. Stop or delete it to avoid being billed for additional instance hours
-			Backup storage upto the size of EBS volume attached to the RDS instance is free	
-			Partial DB instance hours consumed are billed as full hours.
-			When your database is backed up, the backup data (including transactions logs) is geo-redundantly replicated across multiple Availability Zones to provide even greater levels of data durability.
-			Multi-AZ: You are not charged for the data transfer incurred in replicating data between your primary and standby
-			RDS reserved instances: 1-3 Year reservation / High discounts / Payment -- No Upfront, Partial Upfront, All Upfront
-				Bought at Region level & not AZ & Cannot be transferred to other Region (Remember EC2 supports both RI and capacity reservation)
-				Reserved Instances discounts can be applied against Read Replica and Multi-AZ setup
-			Read Replicas are billed as standard DB instance
-		A DB Subnet Group:
-				A collection of subnets. One subnet MUST BE IDENTIFIED in each AZ. 
-				The subnet group is assigned to DB instance during creation.
-				Amazon RDS then uses that DB Subnet Group and your preferred Availability Zone to select a subnet and an IP address within that subnet. 
-				Amazon RDS creates and associates an Elastic Network Interface to your DB Instance with that IP address
-		Multi-AZ setup:
-				Primary db for Reads & Write AND a Hot Standby in same region-but-different AZ which is SYNCHRONOUSLY kept in sync with primary
-				Primary and Standby fronted by a DNS name and the RDS Service updates the CNAME record to point to the standby automatically during failover
-				Therefore, the DB client does not need to be updated with DB endpoint info when failover has happens
-				AWS recommends Provisioned IOPS for Multi-AZ setup
-				Reasons for failover: 
-					It takes few minutes for failover to happen
-					Compute failure, Storage failure, AZ failure, Network failure
-					Primary DB is changed (like Parameter Changes, DDL updates)
-					Primary DB instance is being patched
-					Exception situation: Amazon RDS provides an option to initiate a MANUAL failover when rebooting your instance
-		Read replicas:
-			Upto 5 read replicas for a given DB instance ASYNCHRONOUSLY in the same region AND different region 
-				Read replica lags the primary database
-				(Exception: SQL Server supports same region replication only)
-			You can SCALE UP the compute or storage for the READ REPLICA when it is being created (Again you CANNOT SCALE DOWN)
-				The READ REPLICA inherits the following configuration from it's source primary DB instance
-					The Backup window
-					The Maintenance window
-					The db parameter groups		Backup MUST be enabled on primary db for the setup to work
-			Each replica has it's own DNS name, so user needs to track replicas and application will need to be updated with the new replicas
-			In the event of Multi-AZ failover:
-				Any associated and available read replicas will automatically connect to the NEW PRIMARY and resume replication once failover has completed 
-			Multi-AZ setup on READ REPLICA:
-				Amazon RDS for MySQL, MariaDB, PostgreSQL, Aurora and Oracle allow you to enable Multi-AZ configuration on read replicas 
-			READ REPLICA CHAINING or Second-tier read replica:
-				Supported by MariaDB, Aurora, MySQL 
-				Upto 4 in the chain starting with the source database
-				Not yet supported by Oracle, SQL Server, Postgresql
-			Promoting Read-Replica to a Standalone database:
-				Promoting a read replica to a standalone database essentially disconnects it from the replication process and makes it a standalone database
-				Deleting the source database essentially disconnects all read replicas from the replication process and makes them standalone databases
-				When a read replica in a replication-chain becomes standalone database, all replicas that were replicating from it continue to replicate from it
-					example: SourceDB->R1->R2->R3 and now if you promote R1 to be a standalone database, R2 continues to source the replication traffic from R1 (and NOT SourceDB)
+			- LIMITS: Databases or schemas per DB instance:
+					~ No limit imposed by software:
+							~ RDS for Amazon Aurora
+							~ RDS for MySQL
+							~ RDS for MariaDB
+							~ RDS for PostgreSQL
+					~ 1 Database per DB instance:
+							~ RDS for Oracle: 1 database per instance; no limit on number of schemas per database imposed by software
+					~ 100 Databases per DB instance
+							~ RDS for SQL Server
+			
+			- Supported storage types:
+					~ General purpose
+								MariaDB, MySQL, Oracle, and PostgreSQL database instances: 20 GiB–64 TiB
+								SQL Server for Enterprise, Standard, Web, and Express editions: 20 GiB–16 TiB
+								
+					~ Provisioned IOPs
+								MariaDB, MySQL, Oracle, and PostgreSQL database instances: 20 GiB–64 TiB
+								SQL Server for Enterprise, Standard, Web, and Express editions: 20 GiB–16 TiB
+					
+					~ Magnetic (standard and cold are not supported)
+			
+			- Multi-AZ setup:
+					~ MariaDB, MySQL, Oracle, and PostgreSQL DB instances use Amazon's failover technology
+					~ SQL Server DB instances use SQL Server Database Mirroring (DBM) or Always On Availability Groups (AGs)
+					~ Primary db for Reads & Write AND a Hot Standby in same region-but-different AZ which is SYNCHRONOUSLY kept in sync with primary
+					~ Primary fronted by a DB Instance DNS name and the RDS Service updates the CNAME record of the DNS name to point to the standby instance automatically during failover. Therefore, the DB client does not need to be updated with DB endpoint info when failover has happens
+					~ But the DB client can cache the IP address. Therefore, AWS recommends a TTL value of no more than 60 seconds
+					~ AWS recommends Provisioned IOPS for Multi-AZ setup
+					~ Reasons for failover: 
+						Primary DB - Compute failure, Storage failure, AZ failure, Network failure
+						Primary DB is changed (like Parameter Changes, DDL updates)
+						Primary DB instance is being patched
+						Exception situation: Amazon RDS provides an option to initiate a MANUAL failover when rebooting your instance
+					~ Failover is AUTOMATIC:
+							~ It takes few minutes (60-120secs) for failover to happen
+							~ large transactions or a lengthy recovery process can increase failover time
+							~  it can take additional time for the RDS console to reflect the new Availability Zone
 
-		RDS Notification to Interested Parties:
-			RDS uses SNS to notify RDS events to interested parties
-			You MUST EXPLICILY SUBSCRIBE to receive the events 
-			Using CONSOLE, you can view last 24 hours of events
-			Using CLI, you can view last 14 days of events
-		RDS on Outpost:
-			Run RDS on-premise
-		RDS Proxy:
-			Use-cases:
-				enables multiple application connections to share a database connection for efficient use of database resources
-				allows you to maintain predictable database performance by regulating the number of database connections that are opened
-				removes requests that cannot be served to preserve overall performance and availability of the application
-				maintains a pool of database connections to avoid unnecessary stress of open and close connections
-				during transient failure, automatically routes traffic to a new database instance while preserving application connections
-				enforce IAM based authentication with relational databases
-				manage database credentials through AWS Secrets Manager
-			RDS Proxy can add an average of 5 milliseconds of network latency to query or transaction response time
-		RDS Security:
-			RDS DB Instance - Master user account :
-				is a native database user account used to control access to the DB. And from this account, you create more user credentials
-				Role in Oracle: dba
-				Role in SQL Server: db_owner
-				Role in MySQL: create, drop, references, event, alter, delete, index, insert, select, update, create temporary tables, lock tables, trigger, create view, show view, alter routine, create routine, execute, trigger, create user, process, show databases, grant option.
-			RDS Supports data-in-motion encryption using SSL certificates / RDS generates the certificate for the DB Instance
-			At rest encryption using KMS is supported / SQL, Oracle - TDE / Unencrypted database->Snapshot->Copy snapshot+KMS->New snapshot->DB instance from new snapshot
-			An ENCRYPTED DATABASE will create the following:
-				- Encrypted backup snapshots (automated and manual)
-				- Encrypted STANDBY in Multi-AZ
-				- Encrypted Read Replica
+			- Read replicas:
+					~ Upto 5 read replicas for a given DB instance in the same region or different region
+					~ Read replicas are synced ASYNCHRONOUSLY, hence lags the primary database
+					~ MySQLDB and Maria DB support logical replication 
+					~ Postgresql, Oracle and MS SQL supports physical replication 
+					~ Each replica has it's own DNS name, so user needs to track replicas and application will need to be updated with the new replicas
+					~ Scaling Read Replicas:
+							~ You can SCALE UP the compute or storage for the READ REPLICA when it is being created (Again you CANNOT SCALE DOWN)
+					~ READ REPLICA CHAINING or Second-tier read replica:
+							~ Read replicas can have their own Read Replicas
+							~ Supported by MariaDB, Aurora, MySQL 
+							~ Upto 4 in the chain starting with the source database
+							~ Not yet supported by Oracle, SQL Server, Postgresql
+					~ CIRCULAR Replication is not supported
+					
+					~ The READ REPLICA inherits the following configuration from it's source primary DB instance
+							The Backup window 		+ 
+							The Maintenance window 	+
+							The db parameter groups
+					~ Multi-AZ failover:
+						Any associated and available read replicas will automatically connect to the NEW PRIMARY and resume replication once failover has completed 
+					~ Multi-AZ setup for READ REPLICA:
+						Amazon RDS for MySQL, MariaDB, PostgreSQL, Aurora and Oracle allow you to enable Multi-AZ configuration on read replicas 
+					~ Promoting Read-Replica to a Standalone database:
+							~ Promoting a read replica to a standalone database disconnects it from the replication process and makes it a standalone database
+							~ When a read replica in a replication-chain becomes standalone database, all replicas that were replicating from it continue to replicate from it
+								example: SourceDB->R1->R2->R3 and now if you promote R1 to be a standalone database, R2 continues to source the replication traffic from R1 (and NOT SourceDB)
+					~ Deleting the primary database essentially disconnects all read replicas from the replication process and makes them standalone databases
+			
+			
+			- Pricing:
+					~ RDS cost components include 
+						compute: charged only when the DB is up and running
+						storage: per GiB per month
+						backup storage: per GiB per month 
+						I/Os: per 1 million requests per month
+						provisioned IOPS: per IOPS per month
+						Data transfer: per GB
+					~ Purchasing options:
+						~ On-Demand Instances	: pay by the hour
+						~ Reserved Instances	: one-year or three-year commitment
+					~ Billed for each hour your DB instance is running in an available state. Stop or delete it to avoid being billed for additional instance hours
+					~ Backup storage upto the size of EBS volume attached to the RDS instance is free	
+					~ Partial DB instance hours consumed are billed as full hours.
+					~ When your database is backed up, the backup data (including transactions logs) is geo-redundantly replicated across multiple Availability Zones to provide even greater levels of data durability.
+					~ Multi-AZ: You are not charged for the data transfer incurred in replicating data between your primary and standby
+					~ RDS reserved instances: 1-3 Year reservation / High discounts / Payment -- No Upfront, Partial Upfront, All Upfront
+						Bought at Region level & not AZ & Cannot be transferred to other Region (Remember EC2 supports both RI and capacity reservation)
+						Reserved Instances discounts can be applied against Read Replica and Multi-AZ setup
+					~ Read Replicas are billed as standard DB instance
+			
+			- Parameter Groups:
+					~ A DB parameter group acts as a container for engine configuration values that are applied to one or more DB instances
+					~ When you change the DB parameter group associated with a DB instance, you must manually reboot the instance for the config to kick in
+					~ Set character set or collation before creating the DB instance and databases within. This ensures that the default database and new databases in your DB instance use the character set and collation values that you specify. If you change character set or collation parameters for your DB instance, the parameter changes are not applied to existing databases
+					~ When you change a static parameter and save the DB param group, the parameter change takes effect after you manually reboot the DB instance
+					~ When you change a dynamic parameter and save the DB param group, the change is applied immediately regardless of the Apply Immediately setting
+
+			- Upgrading a DB instance engine version
+					~ Major version supported for 3 years from the date of initial support by RDS
+					~ Minor version supported for 1 year from the date of initial support by RDS
+					~ When Amazon RDS supports a new version of a database engine, you can choose how and when to upgrade your database DB instances
+					~ There are two kinds of upgrades: 
+							- major version upgrades 
+							- minor version upgrades
+					~ a minor version upgrade includes only changes that are backward-compatible with existing applications
+					~ major engine version upgrade can introduce changes that are not compatible with existing applications
+					~ DB Admin can enabled auto-upgrade minor versions
+					~ DB Admin needs to manually modify the DB engine version from console, CLI and Api, when upgrading major versions 
+					~ Single-AZ Aproach:
+							##### Do it during maintenance window as this will require an outage
+					~ Read Replicas Upgrade:
+							##### If your DB instance is using read replicas, you must upgrade all of the read replicas before upgrading the source instance.  
+					~ Multi-AZ upgrade:
+							##### If your DB instance is in a Multi-AZ deployment, both the writer and standby replicas are upgraded at the same time. Your DB instance will not be available until the upgrade is complete, resulting in app outage
+				~ Upgrade Procedure: 
+						~ To manually upgrade a database instance to a supported engine version, use the Modify DB Instance command on the AWS Management Console or
+							the ModifyDBInstance API and set the DB Engine Version parameter to the desired version. By default, the upgrade will be applied or during 
+							your next maintenance window. You can also choose to upgrade immediately by selecting the Apply Immediately option in the console API.
+						~ If AWS determines that a new engine MINOR VERSION contains significant bug fixes compared to a previously released minor version, 
+							AWS will schedule automatic upgrades for DB instances which have the Auto Minor Version Upgrade setting to “Yes”. 
+							These upgrades will be scheduled to occur during customer-specified maintenance windows.
+						~ Testing: Create a DB snapshot of your existing DB instance, restoring from the DB snapshot to create a new DB instance, and 
+							then initiating a version upgrade for the new DB instance. You can then experiment safely on the upgraded copy of your DB instance 
+							before deciding whether or not to upgrade your original DB instance.
+						~ Actual Upgrade: Amazon RDS takes two DB snapshots during the upgrade process. The first DB snapshot is of the DB instance before any 	
+							upgrade changes have been made. If the upgrade doesn't work for your databases, you can restore this snapshot to create a DB instance running the old version. The second DB snapshot is taken when the upgrade completes.
+						~ Backups and Snapshots:
+							In Multi-AZ setup, backups are taken on the STANDBY database to avoid interrupting the PRIMARY database
+
+			- CW Events for RDS:
+					Four categories: DB Instance, DB Snapshot, DB Security Group, DB Parameter Group
+			
+			- Define Maintenance window: 
+				~ YOU SHOULD GENERALLY EXPECT OUTAGE DURING RDS MAINTENANCE 
+				~ Maintenance Windows are 30-minutes time-slot every week defined by the user 
+				~ If the user does not specify, AWS randomly chooses a 30-min maintenance window
+				~ Activities carried out during maintenance window are as follows:
+					DB Instance modification
+					Version upgrade
+						+
+					OS Patching
+					DB Instance patching
+					DB Scaling 
+					Security fix 
+					Other fixes
+				~ RDS Software Update, OS Patching, DB Scaling, General Maintenance:
+					Single-AZ Aproach:
+						Do it during maintenance window as this will require an outage
+					Multi-AZ Approach: 
+						1) Do the necessary changes on STANDBY first 
+						2) Promote the STANDBY to PRIMARY 
+						3) Do the necessary changes on the old primary (Once step 3 is done, remember that there is NO NEED to flip the primary status and confer it on old primary) 
+
+			- Backups, Snapshots & Restoration:
+					~ What gets backed-up in the 'Backup Snapshot'?
+							~ The DB instance (including all databases within the instance)
+								+
+							  The Transaction Logs
+					~ Constraints during backup:
+							~ REMEMBER I/O is suspended when backup is taken to maintain consistency
+					~ Modes of Backups: 
+							- Automated Backups
+							- Manual Backups - User Initiated
+					~ Where are the backups stored?
+							~ Backup snapshots of the DB Instance and Tx Logs are stored in S3 buckets
+					~ What is the backup retention period
+							~ Automated Snapshots are retained for 7(default) to 35 days (MAX)
+							~ Manual Snapshots can be stored indefinitely
+					~ Durability of snapshots:
+							~ Multiple copies of the snapshots are stored in various AZs for durability
+							~ Automated backups are deleted when the source database is deleted 
+							~ Manual backups are NOT deleted when the source database is deleted
+					~ What if RETENTION PERIOD is ZERO?
+							~ The Backups will be DISABLED
+					~ Recovery Point Objective:
+							~ Automated snapshots gives you point-in-time recovery to upto 5-minutes in the past
+					~ Automated Backup:
+							~ I/O is always suspended on the DB instance from where the backup is taken
+							~ In Single-AZ setup, backup is taken from primary database
+							~ In Multi-AZ setup, backup is taken from the standby to avoid I/O suspension on the Primary
+							~ Automated backups are deleted when the DB instance is deleted
+							~ RPO = System state at (CURRENT TIME - 5 minutes)
+					~ Manual Backup: 
+							~ User initiated snapshot / Saved in S3
+							~ Since I/O is suspended, it is preferred to take backups during maintenance window
+							~ If the DB instance gets deleted, manually created DB backup snapshots are not deleted
+							~ Manual snapshots restore to the point when the backup was taken
+					~ Restoration:
+							~ Restoration always creates a new DB instance with a new endpoint 
+							~ Restoration does not over-write the original source db
+
+			- Data import into RDS:
+					MySQL: mysqldump, mysqlimport
+					Oracle: SQL Loader, data pump
+					Postgresql: pg_dump
+				
+			- Scaling Factors:
+					~ Compute and Storage can be scaled
+					~ Scaling Storage:
+							~ Storage can be scaled UP with no downtime 
+							~ Storage CANNOT be scaled down
+							~ *** EXCEPTION - MS SQL Server DOES NOT SUPPORT changing the Storage Capacity and the Storage Type / You need to take a snapshot and then restore into a new database with desired configuration
+					~ Scaling Compute:
+							~ scaling results in DB instance unavailability as the instance is moved from from one instance to another. AWS claims it to be few minutes, so do it during maintenance window
+
+			- Query slowness:
+					~ MYSQL: slow query logs
+					~ MariaDB: slow query logs
+					~ Oracle: Trace files
+					~ SQL Server: Traces - client-side and server-side
+		
+			- RDS Notification to Interested Parties:
+					~ RDS uses SNS to notify RDS events to interested parties
+					~ You MUST EXPLICILY SUBSCRIBE to receive the events 
+					~ Using CONSOLE, you can view last 24 hours of events
+					~ Using CLI, you can view last 14 days of events
+			
+			- RDS on Outpost:
+					~ Run RDS on-premise
+			
+			- RDS Proxy:
+					Use-cases:
+						connection pooling: maintains a pool of database connections to avoid unnecessary stress of open and close connections
+						connection sharing: enables multiple application connections to share a database connection for efficient use of database resources
+						IAM support: enforce IAM based authentication with relational databases
+						Predictable perf: allows you to maintain predictable db performance by regulating the number of database connections that are opened
+						Removes requests: that cannot be served to preserve overall performance and availability of the application
+						Failover: during transient failure, automatically routes traffic to a new database instance while preserving application connections
+						Integration with secrets manager: Manage database credentials through AWS Secrets Manager
+					RDS Proxy can add an average of 5 milliseconds of network latency to query or transaction response time
+			
+			- RDS Security:
+					~ RDS DB Instance - Master user account :
+						is a native database user account used to control access to the DB. And from this account, you create more user credentials
+						Role in Oracle: dba
+						Role in SQL Server: db_owner
+						Role in MySQL: create, drop, references, event, alter, delete, index, insert, select, update, create temporary tables, lock tables, trigger, create view, show view, alter routine, create routine, execute, trigger, create user, process, show databases, grant option.
+					~ RDS Supports data-in-motion encryption using SSL certificates / RDS generates the certificate for the DB Instance
+					~ At rest encryption using KMS is supported / SQL, Oracle - TDE / Unencrypted database->Snapshot->Copy snapshot+KMS->New snapshot->DB instance from new snapshot
+					~ An ENCRYPTED DATABASE will create the following:
+						- Encrypted backup snapshots (automated and manual)
+						- Encrypted STANDBY in Multi-AZ
+						- Encrypted Read Replica
+
+	===================================================
+	RDS Aurora
+	===================================================
+			- Managed RDS service compatible with MySQL (5x throughput of MySQL), Postgresql (3x throughput of Postgresql) 
+					**************
+					************** Base RDS concept of DB Instances, Databases are intact **************
+					**************
+					~ with upto 72 hours of backtracking for MySQL 
+					
+						
+			- Aurora DB Cluster :
+					~ Single-Master Replication within a REGION
+					~ Multi-Master Replication between REGIONS
+					~ Aurora Global Database with multiple cluster in multiple regions
+					
+			- Aurora Single-Master Cluster:
+						###### 
+						An Aurora Single-Master DB Cluster = 	1 Primary DB Instance 
+																+ upto 15 Read Replica DB Instances
+						######
+					~ Single-Master Cluster is a cluster with one Master
+					~ Cluster Volume = Virtual DB-storage volume that spans 3 AZs and each AZ has a DB instance (which is complete copy of the data)  
+					~ 1 Primary DB Instance = One DB instance that manages all READ and WRITE operations and replicates to the cluster volume 
+					~ Multiple DB Instance Replicas = Multiple read-only replicas that connect to the same cluster volume for read purposes
+			
+			- Replication within cluster volume:
+					~ The DB cluster volume is physically made up of multiple copies of the data for the DB cluster
+					~ The primary instance and the Aurora Replicas in the DB cluster all see the data in the cluster volume as a single logical volume
+					~ As a result, all Aurora Replicas return the same data for query results with minimal replica lag
+					~ This lag is usually much less than 100 milliseconds after the primary instance has written an update
+					~ Replica lag varies depending on the rate of database change. That is, during periods where a large amount of write operations occur for the database, you might see an increase in replica lag.
+					
+			- Aurora Replicas:
+					~ If the writer instance in a cluster becomes unavailable, Aurora automatically promotes one of the reader instances to take its place as the new writer and the 'Cluster endpoint' automatically points to the new writer
+					
+			- Aurora Multi-Master Cluster:
+					~ Multi-Master Cluster is a cluster where all DB instances are Masters i.e. can perform read/write operations
+					~ There is NO more read replicas OR the need to promote a Read replica to a master as part of Master failure 
+					~ There are multiple WRITER endpoints. There are no more READER endpoints 
+					~ Supports Global-Read-After-Write (GRAW):  any read operations always see the most current state of the data. Set the aurora_mm_session_consistency_level to REGIONAL_RAW
+					~ WRITE CONFLICTS:
+							A situation that occurs when different DB instances attempt to modify the same data page at the same time. The earliest change request is approved using a quorum voting mechanism. That change is saved to permanent storage.  The DB instance whose change isn't approved rolls back the entire transaction containing the attempted change. Rolling back the transaction ensures that data is kept in a consistent state, and applications always see a predictable view of the data. Your application can detect the deadlock condition and retry the entire transaction.
+					~ For TRUE Multi-Master Active-Active workloads:
+							~ It is recommended that user segment client writes based on workload i.e. specific workload writes go to a specific DB instance which is the shard for that data type
+					 
+			- Aurora Global Database:
+						###### 
+						An Aurora Global Database = 			1 Primary DB Instance in Primary Cluster  
+																+ upto 5 secondary clusters AND upto 16 Reader DB Instances in each secondary cluster
+						######
+					~ Multiple REGION 
+					
+			- Aurora Cluster Volume:
+					~ Contains all your user data, schema objects, and internal metadata such as the system tables and the binary log
+					~ Auto-growth upto upto 128TiB
+					~ Starting in Aurora MySQL 2.09.0 and 1.23.0, and Aurora PostgreSQL 3.3.0 and 2.6.0, when Aurora data is removed, such as by dropping a table or database, the overall allocated space decreases by a comparable amount
+					~ Aurora preloads the buffer pool with the pages for known common queries that are stored in an in-memory page cache
+					
+			- Aurora Connection Mechanism:
+					~ Clients connect to an intermediate handler called "Endpoint" which then connects to the DB Instance
+					~ Cluster endpoint (Writer endpoint): connects to the Primary DB instance. You can't create, delete, or modify this kind of endpoint
+					~ Reader endpoint: load-balances connections to one of the read replicas in the cluster 
+					~ Custom endpoint: represents a set of DB instances. When you connect to the endpoint, Aurora performs load balancing and chooses one 
+					~ Instance endpoint: connects to a specific DB instance within a cluster
+
+	===================================================
+	DynamoDB:
+	===================================================
+			- Fully-managed REGION-scope NoSQL db with provisioned & on-demand capacity models (ms latency) with optional DAX based-caching (for mus latency)
+				- Max item size = 400KB
+				- Supports DynamoDB Local = downloadable version of DynamoDB
+				- Supports READ Replicas with 1 master and multiple replicas across multiple regions
+				- Supports multi-master replication using Global DynamoDB Tables, but needs streams to be turned ON
+				- Point-in-time recovery to anytime upto 35 days in the past
+			- Global Tables:
+					- Multi-Region, Multi-Master replica tables owned by a single AWS account 
+					- Global tables use DynamoDB Streams to propagate changes between replicas
+					- Global Table does not support strongly consistent reads across Regions. 
+							~ Therefore, if you write to one Region and read from another Region, the read response might include stale data that doesn't reflect the results of recently completed writes in the other Region
+					- For conflicting writes across regions, the last writer wins. 
+			- Attributes 
+					- Scalar Types – A scalar type can represent exactly one value. The scalar types are number, string, binary, Boolean, and null
+					- Set Types – A set type can represent multiple scalar values. The set types are number set, string set, binary set
+					- Document Types – list and map
+			- Partition: 
+					- Partition is an allocation of storage for a table, backed by SSD auto-replicated across multiple AZs within an AWS Region 
+					- "Partition Key": partition to store an item determined by the internal hash of the Partition Key
+					- "Partition Key + Sort Key" : partition determined by the internal hash of the Partition key AND item sorted by the Sorted Key
+					- To read an item from the table, you must specify its partition key value and sort key value
+			- Indices:
+					- A secondary index contains a subset of attributes from a table, along with an alternate key to support Query operations
+					- When you create a secondary index, you need to specify the attributes that will be projected into the index. Three different options for this:
+						~ KEYS_ONLY – Each item in the index consists only of the table partition key and sort key values, plus the index key values. The KEYS_ONLY option results in the smallest possible secondary index.
+						~ INCLUDE – In addition to the attributes described in KEYS_ONLY, the secondary index will include other non-key attributes that you specify. 
+						~ ALL – The secondary index includes all of the attributes from the source table. Because all of the table data is duplicated in the index, an ALL projection results in the largest possible secondary index.
+					- GSI: 
+							20 per table / An index with a PK & SK different from those on the table / A projection is set of attributes copied from a table into a secondary index. The PK & SK are always projected into the index; you can project other attributes to support your app's query requirements / GSI does not support strongly consistent reads. A global secondary index is considered "global" because queries on the index can span all of the data in the base table, across all partitions. A global secondary index is stored in its own partition space away from the base table and scales separately from the base table. Queries on global secondary indexes support eventual consistency only. Every global secondary index has its own provisioned throughput settings for read and write activity. Queries or scans on a global secondary index consume capacity units from the index, not from the base table. The same holds true for global secondary index updates due to table writes.
+					- Local Secondary Index: 
+							5 per table / An index that has the same partition key as the table, but a different sort key / LSI is created when table is created / LSI is deleted when table is deleted. You cannot add a local secondary index to an existing table, nor can you delete any local secondary indexes that currently exist. A local secondary index is "local" in the sense that every partition of a local secondary index is scoped to a base table partition that has the same partition key value. When you query a local secondary index, you can choose either eventual consistency or strong consistency. Queries or scans on a local secondary index consume read capacity units from the base table. When you write to a table, its local secondary indexes are also updated; these updates consume write capacity units from the base table.
+			- Streams:
+					- Asynchronous generation of stream records which is encrypted at rest
+					- No duplicate records in the stream
+					- Stream records retained for 24 hours
+					- Read data using KCL. Upto 2 simultaneous shard consumers  
+					- Number of shards:
+							~ number_of_shards = ceiling( ((write_throughput * (1+percentage_of_updates) * average_record_size_in_bytes) /1024 /1024), 1)
+			- Read/Write Measurement Metrics:
+					- A strongly consistent read might not be available if there is a network delay or outage. In this case, DynamoDB may return a server error (HTTP 500). Strongly consistent reads are not supported on global secondary indexes.
+					- 1 RU = 1 strongly consistent read of 4KB item = 2 eventually consistent reads of 4KB item = Half of transactional read of 4KB item
+					- 1 WU = 1 write of a 1KB item = Half of transactional write of 1KB item
+					- If your application reads or writes larger items (up to the DynamoDB maximum item size of 400 KB), it will consume more capacity units.
+			- On-demand Capacity Mode:
+					- Newly created able starts with 2000 WU, 6000 RU. Capacity can double immediately, but then ramp-up will freeze for 30 minutes 
+			- Provisioned Mode:
+					- You specify the number of reads and writes per second that you require for your application
+			- Actions:
+					- CreateTable, DescribeTable, PutItem , BatchWriteItem (Batch of 25 PutItem), GetItem (provide Table name, PK, SK, "ConsistentRead" param), BatchGetItem(100 GetItem), Query (all items with a Partition Key), Scan (all items in table and return all attributes), UpdateItem , DeleteItem (conditional delete), DeleteTable
+					- Projections can be applied to identify the attributes to return
+					- Expressions:
+							~ denote the attributes that you want to read from an item
+							~ aws dynamodb get-item --table-name ProductCatalog --projection-expression "Description, RelatedItems[0], ProductReviews.FiveStar"
+			- ACID Transactions:
+					- TransactWriteItems  = group multiple Put, Update, Delete, and ConditionCheck
+					- TransactGetItems = multiple Get actions
+			- Time To Live:
+					- Define a per-item timestamp to determine when an item is no longer needed. DynamoDB deletes the item without consuming any WU
+					- Expiry time expressed in unix epoch time
+					- TTL can be enabled and disabled
+
 
 
 	===================================================
@@ -3886,7 +4720,9 @@
 			Write to target database
 			Ongoing replication
 				
+	===================================================
 	EMR:
+	===================================================
 		Elastic Map Reduce = AWS version of Hadoop cluster running on EC2(Compute) and S3(Storage)
 		Map (read in parallel, tokenize, category) followed by Reduce (aggregate, write)
 		EMR can use two file systems for storage:
@@ -3900,7 +4736,9 @@
 			Master Node - Node that manages cluster, distributes data and tasks amongst Core and Task nodes, monitors the tasks that were distributed
 			Mix different EC2 tiers for cost management (like On-Demand or RI for base processing AND spot instances for acceleration)
 		
+	===================================================
 	ElastiCache:
+	===================================================
 		ElastiCache cluster is hosted in a VPC
 			Cluster is composed of nodes
 			A cluster MUST have atleast one node
@@ -3940,7 +4778,9 @@
 					1 shard = 1 R/W primay node + 0-5 read only replicas
 			Better to take backup snapshot of the read replica instead of the R/W replica
 
+	===================================================
 	Kinesis:
+	===================================================
 		PRODUCERS -> Kinesis Ecosystem-> CONSUMERS
 		Use-cases
 			Click-stream
@@ -3997,7 +4837,9 @@
 				- Can ingest data from KINESIS STREAMS or KINESIS FIREHOSE only
 				- Can output data into KINESIS STREAMS or KINESIS FIREHOSE only
 
+	===================================================
 	RedShift:
+	===================================================
 		AWS fully-managed STRUCTURED OLAP COLUMNAR database supporting SQL, Advanced Compression, Data Storage & Query Parallelization
 		Fully-managed
 			- supports replication
@@ -4057,16 +4899,22 @@
 			Pay for backup storage
 			Pay for data transfer from S3 in other regions
 		
+	===================================================
 	DynamoDB + Redshift
+	===================================================
 		Serverless combo to provide OLTP and OLAP
 		Remember that DynamoDB is NOSQL database, while Redshift is SQL database
 			- There are rules to keep in mind whil you copy data from Dynamo to Redshift
 			
+	===================================================
 	DynamoDB + Apache Hive (EMR)
+	===================================================
 		- DynamoDB natively does not support SQL, but Hive QL can leverage SQL-like language on top of DynamoDB
 		- DynamoDB does not support join operations, but Hive QL can join tables in DynamoDB
 		
+	===================================================
 	AWS Glue:
+	===================================================
 		Extract-Tranform-Load (TL) serverless service
 		Three sub-services:
 			- Automatic crawling:  	populate central meta-data repo called Glue Data Catalog with schmea, location, business attribs, data change history
@@ -4074,7 +4922,9 @@
 			- Job execution:	   	scheduler that handles dependency resolution, job monitoring and retries
 									Apache Spark EMR jobs to load data from source into destination
 									
+	===================================================
 	AWS SWF:
+	===================================================
 		Simple WorkFlow Service	
 		Concepts:	
 			Domain: Scoping mechanism / Contains 1 or more workflows / Workflows in different domains cannot interact / AWS Account can have multiple Domains
@@ -4336,66 +5186,3 @@
 		- Hot Standby [ Active - Active sites setup. Route 53 splits the traffic between sites. Web and App servers on both sites are used. But the database used in PRIMARY site. But there is database replication from PRIMARY to SECONDARY.
 
 
-	===================================================
-	DynamoDB:
-	===================================================
-			- Fully-managed REGION-scope NoSQL db with provisioned & on-demand capacity models (ms latency) with optional DAX based-caching (for mus latency)
-				- Max item size = 400KB
-				- Supports DynamoDB Local = downloadable version of DynamoDB
-				- Supports READ Replicas with 1 master and multiple replicas across multiple regions
-				- Supports multi-master replication using Global DynamoDB Tables, but needs streams to be turned ON
-				- Point-in-time recovery to anytime upto 35 days in the past
-			- Global Tables:
-					- Multi-Region, Multi-Master replica tables owned by a single AWS account 
-					- Global tables use DynamoDB Streams to propagate changes between replicas
-					- Global Table does not support strongly consistent reads across Regions. 
-							~ Therefore, if you write to one Region and read from another Region, the read response might include stale data that doesn't reflect the results of recently completed writes in the other Region
-					- For conflicting writes across regions, the last writer wins. 
-			- Attributes 
-					- Scalar Types – A scalar type can represent exactly one value. The scalar types are number, string, binary, Boolean, and null
-					- Set Types – A set type can represent multiple scalar values. The set types are number set, string set, binary set
-					- Document Types – list and map
-			- Partition: 
-					- Partition is an allocation of storage for a table, backed by SSD auto-replicated across multiple AZs within an AWS Region 
-					- "Partition Key": partition to store an item determined by the internal hash of the Partition Key
-					- "Partition Key + Sort Key" : partition determined by the internal hash of the Partition key AND item sorted by the Sorted Key
-					- To read an item from the table, you must specify its partition key value and sort key value
-			- Indices:
-					- A secondary index contains a subset of attributes from a table, along with an alternate key to support Query operations
-					- When you create a secondary index, you need to specify the attributes that will be projected into the index. Three different options for this:
-						~ KEYS_ONLY – Each item in the index consists only of the table partition key and sort key values, plus the index key values. The KEYS_ONLY option results in the smallest possible secondary index.
-						~ INCLUDE – In addition to the attributes described in KEYS_ONLY, the secondary index will include other non-key attributes that you specify. 
-						~ ALL – The secondary index includes all of the attributes from the source table. Because all of the table data is duplicated in the index, an ALL projection results in the largest possible secondary index.
-					- GSI: 
-							20 per table / An index with a PK & SK different from those on the table / A projection is set of attributes copied from a table into a secondary index. The PK & SK are always projected into the index; you can project other attributes to support your app's query requirements / GSI does not support strongly consistent reads. A global secondary index is considered "global" because queries on the index can span all of the data in the base table, across all partitions. A global secondary index is stored in its own partition space away from the base table and scales separately from the base table. Queries on global secondary indexes support eventual consistency only. Every global secondary index has its own provisioned throughput settings for read and write activity. Queries or scans on a global secondary index consume capacity units from the index, not from the base table. The same holds true for global secondary index updates due to table writes.
-					- Local Secondary Index: 
-							5 per table / An index that has the same partition key as the table, but a different sort key / LSI is created when table is created / LSI is deleted when table is deleted. You cannot add a local secondary index to an existing table, nor can you delete any local secondary indexes that currently exist. A local secondary index is "local" in the sense that every partition of a local secondary index is scoped to a base table partition that has the same partition key value. When you query a local secondary index, you can choose either eventual consistency or strong consistency. Queries or scans on a local secondary index consume read capacity units from the base table. When you write to a table, its local secondary indexes are also updated; these updates consume write capacity units from the base table.
-			- Streams:
-					- Asynchronous generation of stream records which is encrypted at rest
-					- No duplicate records in the stream
-					- Stream records retained for 24 hours
-					- Read data using KCL. Upto 2 simultaneous shard consumers  
-					- Number of shards:
-							~ number_of_shards = ceiling( ((write_throughput * (1+percentage_of_updates) * average_record_size_in_bytes) /1024 /1024), 1)
-			- Read/Write Measurement Metrics:
-					- A strongly consistent read might not be available if there is a network delay or outage. In this case, DynamoDB may return a server error (HTTP 500). Strongly consistent reads are not supported on global secondary indexes.
-					- 1 RU = 1 strongly consistent read of 4KB item = 2 eventually consistent reads of 4KB item = Half of transactional read of 4KB item
-					- 1 WU = 1 write of a 1KB item = Half of transactional write of 1KB item
-					- If your application reads or writes larger items (up to the DynamoDB maximum item size of 400 KB), it will consume more capacity units.
-			- On-demand Capacity Mode:
-					- Newly created able starts with 2000 WU, 6000 RU. Capacity can double immediately, but then ramp-up will freeze for 30 minutes 
-			- Provisioned Mode:
-					- You specify the number of reads and writes per second that you require for your application
-			- Actions:
-					- CreateTable, DescribeTable, PutItem , BatchWriteItem (Batch of 25 PutItem), GetItem (provide Table name, PK, SK, "ConsistentRead" param), BatchGetItem(100 GetItem), Query (all items with a Partition Key), Scan (all items in table and return all attributes), UpdateItem , DeleteItem (conditional delete), DeleteTable
-					- Projections can be applied to identify the attributes to return
-					- Expressions:
-							~ denote the attributes that you want to read from an item
-							~ aws dynamodb get-item --table-name ProductCatalog --projection-expression "Description, RelatedItems[0], ProductReviews.FiveStar"
-			- ACID Transactions:
-					- TransactWriteItems  = group multiple Put, Update, Delete, and ConditionCheck
-					- TransactGetItems = multiple Get actions
-			- Time To Live:
-					- Define a per-item timestamp to determine when an item is no longer needed. DynamoDB deletes the item without consuming any WU
-					- Expiry time expressed in unix epoch time
-					- TTL can be enabled and disabled
