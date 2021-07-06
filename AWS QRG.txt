@@ -8,8 +8,21 @@
 		HTTPS between CloudFront and a custom origin
 			– If your origin is an ELB load balancer, you can use a certificate provided by 3rd party and ACM
 			– If the origin is not an ELB load balancer, such as Amazon EC2, the certificate must be issued by a 3rd party trusted CA such as Comodo, DigiCert, Symantec or other third-party providers.
-			
+
 	
+	===================================================
+	Preparing EC2:
+	===================================================
+		- static 
+			golden ami
+
+		- dynamic 
+			user data
+			ASG lifecycle launching action
+			cfn-init
+			cfn-hup
+
+
 	===================================================
 	IAM Policy Evaluation: ESR-PSI:
 	===================================================
@@ -315,18 +328,106 @@
 		- .aws directory
 		- ECS container credentials
 		- EC2 instance role
+
+
 	===================================================
-	ElasticbeanStalk deployment policy
+	ElasticbeanStalk
 	===================================================
-		- Key objects: App (high level container), App Version, Environment, Env Tier (Web or Worker), Saved Configurations, Platform
+		
+		- Supported Platforms:
+				GoJaR No.Net Py		: Go Java Ruby Nodejs .Net Python
+				DoDo PaIIS ToGl 	: Docker Multi-container Docker Packer IIS Tomcat GlassFisg 
+		  
+		- Key objects: 
+				~ App (high level container)
+				~ App Version 
+						You can retain "n" count of app versions 
+						You can delete all versions older than a particular version
+				~ Environment
+						Environments can be cloned, rebuilt (i.e. terminate everything and start from scratch)
+				~ Environment Configuration 
+						Low cost			: a single EC2 instance 
+						High availability	: ALB, ASG of multiple EC2 instances
+				~ Environment Tier
+						Web:	run a website, web app, web API that serves HTTP requests
+						Worker:	run a application that processes long running workloads pulled from a SQS queue OR performs scheduled tasks based on cron.yml. The backend cloudformation template creates a WorkerQueue and WorkerDeadLetterQueue
+				~ Saved Configurations
+				 
 		- 5 deployment strategies
-			- All at once
-			- Rolling
-			- Rolling with additional batches
-			- Immutable
-			- Traffic splitting
-						
-	===================================================
+				~ All-at-once
+				~ Rolling
+				~ Rolling with additional batches
+				~ Immutable: new temporary ASG created, 1 instance launched, if all goes well remaining instances spun up, instances are detached from temporary ASG to the old ASG, old instances terminated ideally
+				~ Traffic splitting
+		
+		- CLI:
+				~ pip install awsebcli
+				~ eb init --profile userprofile
+				~ mkdir HelloWorld
+				~ cat HelloWorld\.elasticbeanstalk\config.yml 		//application configuration file
+				~ cd HelloWorld
+				~ echo "Ola world!" > index.html
+				~ eb create dev-env									// zips, uploads to S3 and create an app environment
+																	// auto create SG, LC, ASG, ALB, CW alarms 
+				~ eb health											// displays health of the app
+				~ eb health --refresh								// displays health in a loop refreshed 10 seconds
+				~ eb status											// displays status of the app
+				~ eb logs											// display logs
+							
+							#### open a browser with app URL to check and make sure the app is deployed
+				~ echo "Namasakar !" > index.html					// update the index.html
+				~ eb deploy											// to deploy a new version of the application and configurations
+																	// eb terminate: terminate the dev-env
+				~ eb config save dev-env --cfg initial-conf			// backup the configuration of the dev-env in AWS 
+																	// also creates initial-conf.yml in the .elasticbeanstalk\saved_configs dir
+				~ eb setenv ENABLE_COOL_FEW_FEATURE=true			// update the environment configuration of dev-env 
+				~ eb config save dev-env --cfg updated-conf-01		// backup the new config of the dev-env in AWS & saved_configs dir		
+							
+							#### update the updated-conf-01 configuration file in the saved_config dir  
+				~ eb config put updated-conf-01						// over-write the "updated-conf-01" config in AWS with the local copy on hdd
+							
+							#### add additional config file in the .ebextensions folder which ultimately gets zipped up in the app zip file
+				~ mkdir .ebextensions								// create directory to store additive configuration file 
+																	// all .yml files are processed in addition to the saved configs
+				~ vi additional-config.yml							// add additive configs under the option_settings section 
+							####	- ElasticBeanstalk: In the ".ebextensions/xray-daemon.config", set the following option:
+										option_settings:
+											aws:elasticbeanstalk:xray:
+												XRayEnabled: true 
+				~ eb deploy 										// to deploy a new version of the application and configurations
+							#### configuration deployment in order of precedence 
+								HIGHEST --> 	Settings applied directly to the environment 
+												Saved configurations 
+												.ebextensions config files 
+								LOWEST -->		Default values
+								
+							#### create blue-green envs, swap URLs
+				~ eb create blue-env
+				~ eb create green-env
+				$ eb swap blue-env --destination_name green-env		// you can swap urls from the console as well
+		
+		
+		- Cloudformation templates can be included in the ".ebextensions" folder to provision resources
+
+		- "commands" and "container_commands" key:
+				~ The configuration files in the .ebextensions folder can contain two additional keyes 
+						- commands (for EC2) and 
+						- container_commands (for ECS)
+				~ "commands" key:
+					- execute commands on EC2 instance before the app and web server are setup and the app version zip is extracted 
+				
+				~ "container_commands" key:
+					- execute commands after the app and web server are setup and after the app version is extracted, but before app version is deployed
+					- use "leader_only: true" to only run the command on a single instance
+
+		-  RDS in or out of environment?
+				~ Best to keep db out of the beanstalk environment because an environment delete operation will delete the db as well 
+				~ Instead, pass the name of database as an environment variable which your application can read and init connections to 
+		
+		
+		- Dockerrun.aws.json is used to define the tasks, container, clusters etc to run the docker or multi-docker container environment in ElasticBeanStalk
+		
+ 	===================================================
 	CodeBuild
 	===================================================
 		In addition to CW:
@@ -436,6 +537,10 @@
 								- path
 								- path
 
+
+
+
+
 	===================================================
 	CodeDeploy	
 	===================================================
@@ -451,12 +556,26 @@
 					~For EC2/ON-premise compute platform: Use tags to identify group members or could point to ASG or On-premise instances
 			- Deployment type (how deployment should happen) and Deployment configurations (how traffic is to be shifted)
 					- In-place deployment type
-						- EC2/On-premise: All-at once/Half-at-a-time/One-at-a-time/Custom
-						- ECS: All-at once/Half-at-a-time/One-at-a-time/Custom
-						
-					- Blue/Green deployment type
+						- EC2/On-premise: Half-at-a-time/One-at-a-time/Custom
+						- ECS: Half-at-a-time/One-at-a-time/Custom
+						- Lambda: supported
+					- Immutable or Blue/Green deployment type
 						- EC2: Requires ASG, ALB with two target groups
 						- ECS: Requires ASG, ALB with two target groups
+						- Lambda: supported 
+					- Linear 
+						- EC2/On-premise: Not supported
+						- ECS: supported
+						- Lambda: supported
+					- Canary:
+						- EC2/On-premise: Not supported
+						- ECS: supported
+						- Lambda: supported
+					- All-at-once:
+						- EC2/On-premise: Not supported
+						- ECS: supported
+						- Lambda: supported
+										
 		- Environment variables:
 				~ APPLICATION_NAME
 				~ DEPLOYMENT_ID
@@ -679,6 +798,8 @@
 	===================================================
 			- CI/CD tool that can replace one or more of the following CodeBuild, CodeDeploy, CodePipeline
 			- Due to deep integration with AWS, Jenkins can replace one or more of the native CI/CD components
+			- Build Process:
+				- Master node schedules the jobs based on the "Jenkinsfile" which contains CI/CD config and assigns a Build node to execute the same
 			
 			- Jenkins on EC2
 					~ Architecture includes Master & Slave nodes
@@ -703,9 +824,6 @@
 							- The Worker node runs a Worker agent. This eliminates the need to install full Jenkins package 
 							- The agent enables bi-directional traffic between Master and Worker
 							- Plan for Two Executors per Core 
-							
-					~ Build Process:
-							- Master node schedules the jobs based on the "Jenkinsfile" and assigns a Build node to execute the same
 			
 			- Jenkins on ECS
 					
@@ -721,6 +839,7 @@
 			
 			- Jenkins with AWS 
 				Jenkins provides many plugins for AWS services 
+					~ Codepipeline plugin allows complex workflows to described using Groovy-like lang and can orhestrate complex workflows
 					~ S3 plugin can be used to pull and push data to s3 (example: backup $JENKINS_HOME directory to S3)
 					~ CodeBuild plugin enables build jobs to be sent to CodeBuild instead of Jenkins worker nodes. Plugin uses IAM users
 					~ ECR plugin can be used to pull and push docker images to ECR
@@ -732,12 +851,85 @@
 	
 	
 	===================================================
+	CodeStar 
+	===================================================	
+		- When you want to quickly set up a software development project on AWS and don’t want to configure custom project management tools on EC2, you can use AWS CodeStar. AWS CodeStar comes with a unified project dashboard and integration with Atlassian JIRA software, a third-party issue tracking and project management tool. With the AWS CodeStar project dashboard, you can easily track your entire software development process, from a backlog work item to production code deployment.
+
+	===================================================
 	Blue/Green deployment on AWS
 	===================================================
-			- 
+			*******
+									Amazon ECS 				AWS Lambda 				Amazon EC2/OnPremise
+			In-Place 					✓ 						✓ 							✓
+			Blue-Green 					✓ 						✓ 							✓*
+			Canary 						✓ 						✓ 							☓	
+			Linear 						✓ 						✓ 							☓
+			All-at-Once 				✓ 						✓ 							☓
+			
+						
+			*******
+			ElasticBeanstalk supports
+				All-at-once 
+				Rolling
+				Rolling with additional batches 
+				Immutable
+				Traffic splitting
 
-
-	
+			- Sending test traffic OR  small fraction of production traffic to the Green env is canary analysis or canary testing 
+			- Impaired operation or downtime is the time between detection of an issue in the Green env and shift of traffic back to Blue env 
+			
+			- ASG Default Termination Policy:
+					~ The default termination policy is designed to help ensure that your instances span Availability Zones EVENLY
+					~ The policy first determines which AZ has the most instances & at least one instance that is not protected from scale in
+					~ Within the selected AZ:
+						~ Determine which instances to terminate so as to align the remaining instances to the allocation strategy for the On-Demand or Spot Instance that is terminating
+						~ Determine whether any of the instances use the oldest launch template or configuration
+							~ Terminate instance with the oldest launch configration
+							~ Terminate instance with tyhe oldest launch template
+						~ After applying above criteria,  if there are multiple unprotected instances to terminate, determine which instances are closest to the next billing hour
+						~ If there are multiple unprotected instances closest to the next billing hour, terminate one of these instances at random
+			
+			- ASG Custom Termination Policy:
+					~ Default
+					~ AllocationStrategy
+					~ OldestLaunchTemplate
+					~ OldestLaunchConfiguration
+					~ NewestInstance
+					~ OldestInstance
+					~ ClosestToNextInstanceHour
+			
+			***************
+					- BLUE-GREEN STRATEGY 1 - Route 53 based
+							~ switching of traffic by updating ALIAS record
+					- BLUE-GREEN STRATEGY 2 - ELB based
+							~ Stage Green ASG with new code 
+							~ ELB points to Green ASG
+							~ You control how much traffic is directed to Green by adjusting the size of the Green ASG
+							~ Start putting Blue instances into standby mode
+							~ Rollback entails putting the blue instances back into active state and setting size of the green ASG to 0
+					- BLUE-GREEN STRATEGY 3 - Update ASG Launch Configuration
+							~ Replace existing launch config of an ASG with the new one 
+							~ Any new instances launched will use the new launch configuration 
+							~ During scale-in, instance with oldest launchtemplate/config is USUALLY terminated
+							~ *PROBLEM* If the AZs is unbalanced, then ASG may remove an instance with a new launch config. So beware!
+							~ Start putting Blue instances into standby mode
+							~ Rollback entails putting the blue instances back into active state and setting size of the green ASG to 0
+					- BLUE-GREEN STRATEGY 4 - Elastic Bean Stalk
+							~ Swap Environment URLs of the Blue, Green environment 
+					- BLUE-GREEN STRATEGY 5 - AWS OpsWork 
+							~ A new Green stack is spun up
+							~ Route 53 weighted routing policy shifts traffic from Blue to GreenGrass
+			***************
+			
+			- Best practices:
+				~ Decouple database schema changes from code changes
+			
+			- When Blue-Green deployments are not recommended?
+				~ In some scenarios, sharing a data store isn’t desired or feasible. Schema changes are too complex to decouple. Data locality introduces too much performance degradation to the application, as when the blue and green environments are in
+				geographically disparate regions. All these situations require a solution where the data store is inside the deployment environment boundary and tightly coupled to the blue and green applications, respectively
+				~ You have to use feature flags to control the behavior of the application during the blue/green deployment. This is often a consideration in conjunction with the inability to effectively decouple schema and code changes.
+				~ Many commercial software vendors provide their own update and upgrade process for their applications that they have tested and validated for distribution
+			
 	===================================================
 	CloudWatch Logs Subscriptions:
 	===================================================
@@ -997,9 +1189,13 @@
 			- Concepts: 
 				- Stacks are REGION bound
 				- Logical Resource in a Template, Physical Resource in a Stack
-				- Stack defined in a template
-						
-			- Sections of Template:
+				- Stack defined in a template file (written in JSON, YAML format / uploaded to S3 or directly via console)
+				- Events: 
+					CREATE_IN_PROGRESS, CREATE_COMPLETE, CREATE_FAILED, UPDATE_IN_PROGRESS, UPDATE_COMPLETE, UPDATE_ROLLBACK_IN_PROGRESS, UPDATE_ROLLBACK_FAILED, UPDATE_ROLLBACK_COMPLETE, DELETE_IN_PROGRESS, DELETE_COMPLETE, DELETE_FAILED, DELETE_SKIPPED, UPDATE_REPLACE_SKIPPED
+				- Execution of the template is captured in the following:
+					/var/log/cloud-init-output.log
+				
+			- Sections of Template file:
 				Format Version:
 					'
 				Description:
@@ -1078,8 +1274,6 @@
 				AWS::NotificationARNs
 				AWS::NoValue
 
-			- Resources have attributes. 
-				- special category of attribute is a Policy. For example: CreationPolicy, DeletionPolicy,UpdatePolicy, UpdateReplacePolicy,DependsOn,MetaData
 
 			- Multiple stacks referencing each other is a 'Cross-stack reference scenario'
 				- Use the intrinsic function Fn::ImportValue to import outputs exported by another stack
@@ -1114,22 +1308,30 @@
 							- A stack resource called AWS::CloudFormation::WaitCondition can introduce wait condition in a stack template
 							- A WaitCondition resource has two required properties: Handle is a reference to a WaitConditionHandle declared in the template and Timeout is the number seconds for AWS CloudFormation to wait. 
 							- EXAMPLE:
-											"myWaitCondition" : {
-												"Type" : "AWS::CloudFormation::WaitCondition",
-												"DependsOn" : "Ec2Instance",				// trigger: This wait condition kicks in as soon as Ec2Instance resource is in CREATE COMPLETE
-												"Properties" : {
-													"Handle" : { "Ref" : "myWaitHandle" },	// resolves to a pre-signed URL that you can use to signal success or failure 
-													"Count"  : 5							// default count is 1
-													"Timeout" : "4500"						// seconds
-												}
-											}
-											"myWaitHandle" : {								// definition of handle
-												 "Type" : "AWS::CloudFormation::WaitConditionHandle",
-												 "Properties" : {
-												 }
-											}
+								"myWaitCondition" : {
+									"Type" : "AWS::CloudFormation::WaitCondition",
+									"DependsOn" : "Ec2Instance",				// trigger: This wait condition kicks in as soon as Ec2Instance resource is in CREATE COMPLETE
+									"Properties" : {
+										"Handle" : { "Ref" : "myWaitHandle" },	// resolves to a pre-signed URL that you can use to signal success or failure 
+										"Count"  : 5							// default count is 1
+										"Timeout" : "4500"						// seconds
+									}
+								}
+								"myWaitHandle" : {								// definition of handle
+									 "Type" : "AWS::CloudFormation::WaitConditionHandle",
+									 "Properties" : {
+									 }
+								}
 							- /opt/aws/bin/cfn-signal can be used to signal SUCCESS or FAILURE from an EC2 instance
 					
+			
+			- Troubleshooting WaitCondition:
+					~ Ensure the AMI has the cfn bootstap scripts 
+					~ Ensure the EC2 Instance can talk to CloudFormation service over internet or via an interface endpoint 
+					~ Ensure the cfn-init and cfn-signal commands were run by reviewing the log files 
+					~ Disable rollback on failure. 
+						|-> If you don't disable rollback on failure, stack is deleted and then you can't fetch logs from EC2 Instance
+			
 			- Updating a stack:
 					- When you initiate a stack update, AWS CloudFormation updates resources based on differences between what you submit and the stack's current template and parameters. 
 					- If you update a resource property that requires the resource to be updated, it is updated but ....
@@ -1137,6 +1339,15 @@
 						~ Recreating the resource generates a new physical ID. 
 						~ CloudFormation creates the replacement resource first, and then changes references from other dependent resources to point to the replacement resource. 
 						~ By default, CloudFormation then deletes the old resource. Using the UpdateReplacePolicy, you can specify that CloudFormation retain or snapshot or just delete 
+						
+			~ Rollback during failure of CREATE, DELETE, UPDATE:
+					- During DeleteStack API, you can mention 
+						~ ONFAILURE = ROLLBACK 
+						~ ONFAILURE = DO_NOTHING
+						~ ONFAILURE = DELETE
+
+
+
 			- EC2 Helper scripts:
 					- These are PYTHON scripts available for EC2 Instances 
 					- /opt/aws/bin
@@ -1144,7 +1355,7 @@
 							- cfn-signal: 		script signals a CreationPolicy or WaitCondition to indicate whether EC2 instances have been successfully created or updated. 
 														Best used to indicate readiness of software for service
 							- cfn-get-metadata:	script retrieves metadata for a resource and prints it on standard out
-							- cfn-hup:			script for a daemon that checks for updates to metadata (via UpdateStack) and execute custom user-specified-hooks (i.e. shell commands)
+							- cfn-hup:			script for a daemon that checks for updates to metadata (via UpdateStack API) and execute custom user-specified-hooks (i.e. shell commands)
 															/etc/cfn/cfn-hup.conf daemon configuration file, format follows
 																	[main]
 																	stack=<stack-name-or-id> 	
@@ -1161,15 +1372,37 @@
 																	runas=<runas user> 
 															/etc/cfn/hooks.conf/hooks.d/<multiple config files>
 																	To support composition of several applications deploying change notification hooks, you can place one or more additional hooks configuration files in the hooks.d directory. Format is same as /etc/cnf/hooks.conf file
-				
+			
+			- cfn-init script:
+					~ This script is called in the UserData section of a Resource
+					~ Instead of putting code in the User Data section, you just call the script like the following:  
+								/opt/aws/bin/cfn-init -s ${AWS::STackId} -r MyEC2Instance --region ${AWS::Region} || error_exit "failed to run cfn-init"
+					~ The script, in turn, extracts the information from the MyEC2Instance -> Metadata -> AWS::CloudFormation::Init section
+					~ This section has pgucfs - packages, groups, users, commands, files, services
+					~ The cfn-init script reads the pgucfs sections and executes each on the EC2 instance
+					~ Execution of the cfn-init script is captured in the following:
+							/var/log/cloud-init-cmd.log
+							
+			- cfn-signal script:
+					~ /opt/aws/bin/cfn-signal -e $? -s ${AWS::STackId} -r SampleWaitCondition --region ${AWS::Region}
+					~ It takes the output of the cfn-init command and passes it on to the wait condition resource in the "-e $?"
+			
+			
 			- Resource Attributes:
+						- Resources have attributes. 
+							- special category of attribute is a Policy. For example: CreationPolicy, DeletionPolicy,UpdatePolicy, UpdateReplacePolicy,DependsOn,MetaData
 					1. CreationPolicy: 
-						Associate the CreationPolicy attribute with a resource to prevent its status from reaching "CREATE_COMPLETE" until AWS CloudFormation receives a specified number of success signals or the timeout period is exceeded. To signal a resource, you can use the cfn-signal helper script or SignalResource API. Resources supporting CreationPolicy attrbutes are EC2::Instance, AppStream::Fleet, AutoScaling::AutoScalingGroup, CloudFormation::WaitCondition
+						Associate the CreationPolicy attribute with a resource to prevent its status from reaching "CREATE_COMPLETE" until AWS CloudFormation receives a specified number of success signals or the timeout period is exceeded. If timeout or execution failed, then rollback happens. To signal a resource, you can use the cfn-signal helper script or SignalResource API. Resources supporting CreationPolicy attrbutes are EC2::Instance, AppStream::Fleet, AutoScaling::AutoScalingGroup, CloudFormation::WaitCondition
+						- During CreateStack API, you can mention the rollback behavior
+								~ ONFAILURE = ROLLBACK 
+								~ ONFAILURE = DO_NOTHING
+								~ ONFAILURE = DELETE
+						
 					2. DeletionPolicy:
 						If a resource has no DeletionPolicy attribute, AWS CloudFormation deletes the resource by default. This capability doesn't apply to resources whose physical instance is replaced during stack update operations.
-						Delete:		delete the resource (default) (for S3, all objects must be deleted for the bucket to be deleted)
-						Retain:		retain the resource
-						Snapshot: 	snapshot and then delete (Default for RDS::DBCluster, RDS::DBInstance) (Other resources:EC2::Volume,Neptune::DBCluster,Redshift::Cluster,EalstiCache::CacheCluster,ElastiCache::ReplicationGroup)
+								Delete:		delete the resource (default) (for S3, all objects must be deleted for the bucket to be deleted)
+								Retain:		retain the resource
+								Snapshot: 	snapshot and then delete (Default for RDS::DBCluster, RDS::DBInstance) (Other resources:EC2::Volume,Neptune::DBCluster,Redshift::Cluster,EalstiCache::CacheCluster,ElastiCache::ReplicationGroup)
 					3. DependsOn:
 						Creation of a specific resource follows another
 					4. MetaData:
@@ -1192,6 +1425,9 @@
 											Specifies the Auto Scaling processes to suspend during a stack update. Suspending processes prevents Auto Scaling from interfering with a stack update
 										"WaitOnResourceSignals" :
 											Specifies whether the Auto Scaling group must receive a signal from each new instance in the batch within the specified PauseTime before continuing the update.
+					- UPDATE_ROLLBACK_FAILED:
+						~ Until recently, after a stack was in the UPDATE_ROLLBACK_FAILED state, you had only two options: delete the stack or contact AWS Support to return the stack to a working state. In many cases (for example, if it is running production workloads), deleting the stack is not an acceptable option. AWS CloudFormation now offers a third option: continue update rollback, which you can initiate from the AWS CloudFormation console or with the continue-update-rollback command in the AWS Command Line Interface (CLI). This functionality is enabled for all the stacks in the UPDATE_ROLLBACK_FAILED state
+
 					6. UpdateReplacePolicy:
 						- UpdateReplacePolicy is only executed if you update a resource property whose update behavior is specified as Replacement, thereby causing CloudFormation to replace the old resource with a new one with a new physical ID
 						- UpdateReplacePolicy differs from the DeletionPolicy attribute in that it only applies to resources replaced during stack updates.
@@ -1229,23 +1465,81 @@
 						When you specify a parameter's logical name, it returns the value of the parameter.
 						When you specify a resource's logical name, it returns a value that you can typically use to refer to that resource, such as a physical ID.									
 					
+					
+			
+			- I am trying to validate a Cloudformation template. The command I am issuing is:
+					▶ aws cloudformation validate-template --template-body file://template.json
+				The response I am getting, however, is:
+					"CapabilitiesReason": "The following resource(s) require capabilities:   [AWS::IAM::Role]", 
+			A: The Capabilities and CapabilitiesReason outputs from validate-template are not errors. They are normal outputs listing resources requiring capabilities that will need to be specified (via --capabilities) when running create-stack or update-stack in the future. If your template contains IAM resources, you must specify the CAPABILITY_IAM or CAPABILITY_NAMED_IAM value for this parameter when you use the create-stack or update-stack actions with your template; otherwise, those actions return an InsufficientCapabilities error
+			
+			- Prevent updates to Stack Resources:
+					~ When you create a stack, no stack policy is set, so all update actions are allowed on all resources
+					~ Set the stack policy to prevent Update:Modify, Update:Replace and Update:Delete to a stack
+					~ When you set a stack policy, all resources are protected by default
+					~ To allow updates on all resources, we add an "Allow" statement that allows all actions on all resources
+					~ This Deny statement prevents all update actions, such as replacement or deletion, on the ProductionDatabase resource
+					~ The Principal element is required, but supports only the wild card (*) 
+					~ Console: In the Create Stack wizard, on the Configure stack options page, expand the Advanced section and then choose Stack policy.
+									{
+									  "Statement" : [
+										{
+										  "Effect" : "Allow",
+										  "Action" : "Update:*",
+										  "Principal": "*",
+										  "Resource" : "*"
+										},
+										{
+										  "Effect" : "Deny",
+										  "Action" : "Update:*",
+										  "Principal": "*",
+										  "Resource" : "LogicalResourceId/ProductionDatabase"
+										}
+									  ]
+									}
+			
+			
+			- Rollback a CREATE or UPDATE:
+				~ Rollback triggers enable you to have AWS CloudFormation monitor the state of your application during stack creation and updating, and to roll back that operation if the application breaches the threshold of any of the alarms you've specified. 
+				~ For each rollback trigger (upto 5) you create, you specify the CloudWatch alarm that CloudFormation should monitor. CloudFormation monitors the specified alarms during the stack create or update operation, and for the specified amount of time after all resources have been deployed. If any of the alarms goes to ALARM state during the stack operation or the monitoring period, CloudFormation rolls back the entire stack operation. 
+				~ You can set a monitoring time from the default of 0 up to 180 minutes. 
+				~ During this time, CloudFormation monitors all the rollback triggers after the stack creation or update operation deploys all necessary resources. If any of the alarms goes to ALARM state during the stack operation or this monitoring period, CloudFormation rolls back the entire stack operation. 
+				~ Then, for update operations, if the monitoring period expires without any alarms going to ALARM state, CloudFormation proceeds to dispose of old resources as usual. 
+				~ By default, CloudFormation only rolls back stack operations if an alarm goes to ALARM state, not INSUFFICIENT_DATA state. To have CloudFormation roll back the stack operation if an alarm goes to INSUFFICIENT_DATA state as well, edit the CloudWatch alarm to treat missing data as breaching. 
+			
+			
+			
+	===================================================
+	Lambda in CloudFormation:
+	===================================================
+		- Code can be included inline in the template or referred to in a zip file in a s3 bucket
+			
 	===================================================
 	AWS Serverless Application Model (SAM):
 	===================================================
 		- Serverless Application = 
 									Lambda Functions + 
 									Event Sources + 
-									other AWS resources like APIs, Layer, S3 Apps, Application in Serverless App Repository, DynamoDB table
+									other AWS resources like APIs, Step functions, Application in Serverless App Repository, DynamoDB table
 		- SAM is an open source extension to Cloudformation for serverless applications
-		- TWO COMPONENTS:
+		- SAM Resource Types:
+								AWS::Serverless::Api
+								AWS::Serverless::Application
+								AWS::Serverless::Function
+								AWS::Serverless::HttpApi
+								AWS::Serverless::LayerVersion
+								AWS::Serverless::SimpleTable
+								AWS::Serverless::StateMachine
+		- SAM framework has TWO COMPONENTS:
 				1. SAM Template File:
 						- The template file follows the format of AWS Cloudformation file (format above in prior section)
-								- The "Globals" is SAM-specific template section that defines the properties common to all your serverless functions, APIs, and dynamodb tables. All the AWS::Serverless::Function, AWS::Serverless::Api, and AWS::Serverless::SimpleTable resources inherit the properties that are defined in the section
-						- File, when developed, represents the application architecture
-						- Used to define the packaging and deployment of a single serverless application
 						- YAML or JSON format
-						- SAM Template is distinguished from the CloudFormation Template since SAM will have the following line:
-							Transform:'AWS::Serverless-2016-10-31'
+						- SAM Template is distinguished from the CloudFormation Template:
+							~ Transform:'AWS::Serverless-2016-10-31' is required in a SAM template file
+							~ The "Globals" is SAM-specific template section that defines the properties common to your serverless functions, APIs, and dynamodb tables. All the AWS::Serverless::Function, AWS::Serverless::Api, AWS::Serverless::HttpApi and AWS::Serverless::SimpleTable resources inherit the properties in Globals
+							~ Resources section: In AWS SAM templates the Resources section can contain a combination of AWS CloudFormation resources and AWS SAM resources
+							~ Parameters section: Objects that are declared in the Parameters section cause the sam deploy --guided command to present additional prompts to the user
+							
 				2. SAM CLI:
 						- SAM Template file is the INPUT to CLI
 						- CLI packages, deploys and tests serverless applications
@@ -1291,9 +1585,10 @@
 					~ Logs API, Extensions API, Runtime API 
 				- Runtime
 					- Runtime = Amazon Linux OS + Programming Language binaries + SW Libraries
-					- GoJaR - No.Net - PyCu: Go Java Ruby Nodejs .Net Pythin Custom
+					- GoJaR - No.Net - PyCu: Go Java Ruby Nodejs .Net Python Custom
 					- The runtime is paired with one of the Amazon Linux distributions
 				- Extensions 
+				
 		- Phases in the Environment lifecycle:
 				- Init: 
 					Creates or unfreezes an environment with configured resources (like RAM, CPU, Network, etc), download code (fn & layers), initializes extensions, initializes runtime, and then runs the function’s initialization code
@@ -1377,7 +1672,7 @@
 
 		- Functions invocation pattern: Synchronous, Asynchronous, Event Source Mapping
 					***** Synchronous invocation:
-						( AWS CLI writes the response from the function is response.json. If the function exits without error, the response is null. With erro, error object in json in the file)
+						( AWS CLI writes the response from the function in response.json. If the function exits without error, the response is null. With error, error object in json in the file)
 							CLI
 							Console
 							API Gateway
@@ -1453,7 +1748,7 @@
 		- Integrates with EC2, ECS, Lambda, ElasticBeanstalk
 			- EC2: Daemon binary for installation can be found in S3. Daemon runs on EC2 instance and uses permissions in EC2 instance profile. Add managed policies to EC2 instance profile
 			- Lambda: Daemon is automatically run by Lambda
-			- ECS: Daemon runs in its own container. Daemon container definition included in the task definition. Daemon container image in ECR or DockerHub. Add managed policies to your task role to grant the daemon permission to upload trace data to X-Ray. App containers can call Daemon container directly if the networking mode of the task is bridge(default). 
+			- ECS: Daemon runs in its own container. Daemon container definition included in the task definition. Daemon container image in ECR or DockerHub. Add managed policies to your "task role" to grant the daemon permission to upload trace data to X-Ray. App containers can call Daemon container directly if the networking mode of the task is bridge(default). 
 			- ElasticBeanstalk: In the .ebextensions/xray-daemon.config, set the following option:
 					option_settings:
 						aws:elasticbeanstalk:xray:
@@ -2418,6 +2713,7 @@
 			FSX for Lustre (Linux Cluster)
 		Use-cases: similar to EFS
 		FSX for Windows:
+			This is a single AZ SERVICE, but you can use Distributed File System to enable multi-AZ deployments
 			Fully Managed Windows File Server requiring AD integration (AD can be self managed or AWS managed)
 			SCALABLE from 32GiB to 64TiB
 			Deployed in VPC and the corresponding AZs get ENIs attached to them in default subnet (similar to EFS)
@@ -2491,6 +2787,24 @@
 								EBS Snapshots of disks to attach
 										+
 								Template for the root volume of the Instance-stored backed EC2 Instance
+						
+						- EC2 AMI ID from SSM paramter store. Now, the latest version of a Windows and Linux regional ImageID can be returned from a simple Parameter Store query. Each Windows and Amzn Linux AMI now has its own Parameter Store namespace that is public and describable. Upon querying, an AMI namespace returns only its regional ImageID value.
+						Windows namespace has two parts: 
+							Parameter Store Prefix (tree): /aws/service/ami-windows-latest/
+							AMI name alias: Windows_Server-2016-English-Full-Base
+							c:\> aws ssm get-parameters --names /aws/service/ami-windows-latest/Windows_Server-2016-English-Full-Base --region us-east-1
+
+						Linux namespace has two parts:
+							Parameter Store Prefix (tree): /aws/service/ami-amazon-linux-latest/
+							AMI name alias: (example) amzn-ami-hvm-x86_64-gp2
+							$ aws ssm get-parameters --names /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2 --region us-east-1 
+						
+						- ECS AMI ID
+							To see the latest ECS Optimized Amazon Linux AMI information in your default region, run this AWS CLI command in your terminal:
+							$ aws ssm get-parameters --names /aws/service/ecs/optimized-ami/amazon-linux/recommended
+						
+						- In the Cloudformation template, when a param pointing to "AMI Id" needs to be fetched from the Param Store you can define the params to be of type:
+								AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
 						
 						
 				Block Device Mapping:
@@ -4621,7 +4935,7 @@
 	===================================================
 	DynamoDB:
 	===================================================
-			- Fully-managed REGION-scope NoSQL db with provisioned & on-demand capacity models (ms latency) with optional DAX based-caching (for mus latency)
+			- Fully-managed REGION-scope and Multi-REGION NoSQL db with provisioned & on-demand capacity models (ms latency) with optional DAX based-caching (for mus latency)
 				- Max item size = 400KB
 				- Supports DynamoDB Local = downloadable version of DynamoDB
 				- Supports READ Replicas with 1 master and multiple replicas across multiple regions
